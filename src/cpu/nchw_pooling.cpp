@@ -69,10 +69,9 @@ status_t nchw_pooling_fwd_t<data_type::f32>::execute_forward(
     const dim_t padF = pd()->padFront();
     const dim_t padT = pd()->padT();
     const dim_t padL = pd()->padL();
-
-    const auto apply_offset = [](int index, int offset) {
-        return (index > offset) ? index - offset : 0;
-    };
+    const dim_t padB = pd()->padB();
+    const dim_t padR = pd()->padR();
+    const dim_t padBack = pd()->padBack();
 
     const auto set_ws = [=](dim_t mb, dim_t c, dim_t od, dim_t oh, dim_t ow,
                                 dim_t value) {
@@ -95,6 +94,7 @@ status_t nchw_pooling_fwd_t<data_type::f32>::execute_forward(
                                  dim_t ow) {
         const auto src_off = IW * IH * ID * C * mb + IW * IH * ID * c;
         const auto *src_loc = &src[src_off];
+        bool is_initialized = false;
 
         for_(dim_t kd = 0; kd < KD; ++kd)
         for_(dim_t kh = 0; kh < KH; ++kh)
@@ -108,23 +108,30 @@ status_t nchw_pooling_fwd_t<data_type::f32>::execute_forward(
 
             const auto src_off_loc = IW * IH * id + IW * ih + iw;
             const auto &s = src_loc[src_off_loc];
-            if (s > d[0]) {
+
+            if (!is_initialized) {
                 d[0] = s;
                 set_ws(mb, c, od, oh, ow, kd * KH * KW + kh * KW + kw);
+                is_initialized = true;
+            } else {
+                if (s > d[0]) {
+                    d[0] = s;
+                    set_ws(mb, c, od, oh, ow, kd * KH * KW + kh * KW + kw);
+                }
             }
         }
     };
 
     const auto ker_avg = [=](data_t *d, dim_t mb, dim_t c, dim_t od, dim_t oh,
                                  dim_t ow) {
-        const auto id_start = apply_offset(od * SD, padF);
-        const auto ih_start = apply_offset(oh * SH, padT);
-        const auto iw_start = apply_offset(ow * SW, padL);
-        const auto id_end = min(od * SD - padF + KD, ID);
-        const auto ih_end = min(oh * SH - padT + KH, IH);
-        const auto iw_end = min(ow * SW - padL + KW, IW);
+        auto id_start = od*SD - padF;
+        auto ih_start = oh*SH - padT;
+        auto iw_start = ow*SW - padL;
+        auto id_end = nstl::min(od*SD - padF + KD, ID + padBack);
+        auto ih_end = nstl::min(oh*SH - padT + KH, IH + padB);
+        auto iw_end = nstl::min(ow*SW - padL + KW, IW + padR);
 
-        const auto num_summands = (alg == alg_kind::pooling_avg_include_padding)
+        auto num_summands = (alg == alg_kind::pooling_avg_include_padding)
                 ? KD * KW * KH
                 : (id_end - id_start) * (ih_end - ih_start)
                         * (iw_end - iw_start);
@@ -133,6 +140,18 @@ status_t nchw_pooling_fwd_t<data_type::f32>::execute_forward(
                 = IW * IH * ID * C * mb + IW * IH * ID * c + iw_start;
 
         float d_val = 0;
+        id_start = nstl::max(id_start, dim_t(0));
+        ih_start = nstl::max(ih_start, dim_t(0));
+        iw_start = nstl::max(iw_start, dim_t(0));
+
+        id_end = nstl::min(id_end, ID);
+        ih_end = nstl::min(ih_end, IH);
+        iw_end = nstl::min(iw_end, IW);
+
+        if (alg == alg_kind::pooling_avg_exclude_padding)
+            num_summands = (id_end - id_start)*(ih_end - ih_start)*(iw_end - iw_start);
+        if (num_summands == 0) return d_val;
+
         for_(dim_t id = id_start; id < id_end; ++id)
         for (dim_t ih = ih_start; ih < ih_end; ++ih) {
             const auto src_off_loc = src_off + IW * IH * id + IW * ih;
@@ -257,15 +276,14 @@ status_t nchw_pooling_fwd_t<d_type>::execute_forward(
     const dim_t padF = pd()->padFront();
     const dim_t padT = pd()->padT();
     const dim_t padL = pd()->padL();
+    const dim_t padB = pd()->padB();
+    const dim_t padR = pd()->padR();
+    const dim_t padBack = pd()->padBack();
 
     const size_t simd_w = 16;
     const size_t src_size = MB * C * ID * IH * IW;
     const size_t blocked_size = src_size / simd_w;
     const size_t tail_size = src_size % simd_w;
-
-    auto apply_offset = [=](int index, int offset) {
-        return (index > offset) ? index - offset : 0;
-    };
 
     auto set_ws = [=](dim_t mb, dim_t c, dim_t od, dim_t oh, dim_t ow,
                           dim_t value) {
@@ -288,6 +306,7 @@ status_t nchw_pooling_fwd_t<d_type>::execute_forward(
                            dim_t ow) {
         const auto src_off = IW * IH * ID * C * mb + IW * IH * ID * c;
         const auto *src_loc = &cvt_wsp[src_off];
+        bool is_initialized = false;
 
         for_(dim_t kd = 0; kd < KD; ++kd)
         for_(dim_t kh = 0; kh < KH; ++kh)
@@ -301,26 +320,43 @@ status_t nchw_pooling_fwd_t<d_type>::execute_forward(
 
             const auto src_off_loc = IW * IH * id + IW * ih + iw;
             const auto &s = src_loc[src_off_loc];
-            if (s > d[0]) {
+
+            if (!is_initialized) {
                 d[0] = s;
                 set_ws(mb, c, od, oh, ow, kd * KH * KW + kh * KW + kw);
+                is_initialized = true;
+            } else {
+                if (s > d[0]) {
+                    d[0] = s;
+                    set_ws(mb, c, od, oh, ow, kd * KH * KW + kh * KW + kw);
+                }
             }
         }
     };
 
     auto ker_avg = [=](float *d, dim_t mb, dim_t c, dim_t od, dim_t oh,
                            dim_t ow) {
-        auto id_start = apply_offset(od * SD, padF);
-        auto ih_start = apply_offset(oh * SH, padT);
-        auto iw_start = apply_offset(ow * SW, padL);
-        auto id_end = min(od * SD - padF + KD, ID);
-        auto ih_end = min(oh * SH - padT + KH, IH);
-        auto iw_end = min(ow * SW - padL + KW, IW);
+        auto id_start = od*SD - padF;
+        auto ih_start = oh*SH - padT;
+        auto iw_start = ow*SW - padL;
+        auto id_end = nstl::min(od*SD - padF + KD, ID + padBack);
+        auto ih_end = nstl::min(oh*SH - padT + KH, IH + padB);
+        auto iw_end = nstl::min(ow*SW - padL + KW, IW + padR);
 
-        auto num_summands = (alg == alg_kind::pooling_avg_include_padding)
-                ? KD * KW * KH
-                : (id_end - id_start) * (ih_end - ih_start)
-                        * (iw_end - iw_start);
+        // case alg == pooling_avg_include_padding
+        auto num_summands = (id_end - id_start)*(ih_end - ih_start)*(iw_end - iw_start);
+
+        id_start = nstl::max(id_start, dim_t(0));
+        ih_start = nstl::max(ih_start, dim_t(0));
+        iw_start = nstl::max(iw_start, dim_t(0));
+
+        id_end = nstl::min(id_end, ID);
+        ih_end = nstl::min(ih_end, IH);
+        iw_end = nstl::min(iw_end, IW);
+
+        if (alg == alg_kind::pooling_avg_exclude_padding)
+            num_summands = (id_end - id_start)*(ih_end - ih_start)*(iw_end - iw_start);
+        if (num_summands == 0) return;
 
         const auto src_off
                 = IW * IH * ID * C * mb + IW * IH * ID * c + iw_start;
