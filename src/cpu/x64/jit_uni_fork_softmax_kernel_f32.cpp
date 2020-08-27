@@ -38,7 +38,7 @@ jit_uni_fork_softmax_kernel_f32<isa>::jit_uni_fork_softmax_kernel_f32(jit_softma
 
 template <cpu_isa_t isa>
 status_t jit_uni_fork_softmax_kernel_f32<isa>::init_conf(jit_softmax_conf_t &jpp,
-                   const softmax_v2_desc_t &pd, const memory_desc_wrapper &src_d,
+                   const softmax_desc_t &pd, const memory_desc_wrapper &src_d,
                    const memory_desc_wrapper &dst_d) {
     auto ndims = pd.src_desc.ndims;
     auto dims = pd.src_desc.dims;

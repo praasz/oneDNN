@@ -40,7 +40,7 @@ struct jit_uni_fork_softmax_kernel_f32 : public jit_generator {
     jit_softmax_conf_t jpp;
 
     static status_t init_conf(jit_softmax_conf_t &jpp,
-                       const softmax_v2_desc_t &pd,
+                       const softmax_desc_t &pd,
                        const memory_desc_wrapper &src_d,
                        const memory_desc_wrapper &dst_d);
 
