@@ -1234,7 +1234,6 @@ struct memory : public handle<dnnl_memory_t> {
         ABcd8a16b2a = dnnl_ABcd8a16b2a,
         ABcd8a8b = dnnl_ABcd8a8b,
         ABcd8a32b = dnnl_ABcd8a32b,
-        ABcd16a32b = dnnl_ABcd16a32b,
         ABcd8a4b = dnnl_ABcd8a4b,
         ABcd8a2b = dnnl_ABcd8a2b,
         /// 4D tensor blocked by 2nd dimension with block size 8
@@ -3126,6 +3125,13 @@ struct post_ops : public handle<dnnl_post_ops_t> {
         error::wrap_c_api(dnnl_post_ops_append_binary(get(),
                                   convert_to_c(aalgorithm), src1_desc.get()),
                 "could not append a binary post-op");
+    }
+
+    void append_dw_conv(int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w, dnnl_data_type_t in_dt,
+                        const float* weights_data, const float* biases_data) {
+        error::wrap_c_api(dnnl_post_ops_append_dw_conv(get(),
+                                                       in_h, in_w, ker_h, ker_w, str_h, str_w, in_dt, weights_data, biases_data),
+                          "could not append dw conv");
     }
 
     /// Returns the parameters of a binary post-op.
