@@ -252,7 +252,6 @@ typedef enum {
     dnnl_ABcd2b8a4b,
     dnnl_ABcd8a8b,
     dnnl_ABcd8a32b,
-    dnnl_ABcd16a32b,
     dnnl_ABcd8a4b,
     /// 4D tensor blocked by 2nd dimension with block size 8
     dnnl_aBcd8b,
