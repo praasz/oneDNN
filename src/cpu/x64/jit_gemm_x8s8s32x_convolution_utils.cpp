@@ -121,7 +121,27 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator {
             const zero_point_call_params_t &zp,
             const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
             const exec_ctx_t & /* ctx */, const memory_desc_t & /* dst_md */,
-            const single_gemm_conv_chunk_desc_t &) const override;
+            const single_gemm_conv_chunk_desc_t &) const override {
+        if (end <= start) return;
+
+        char *dst = (char *)void_dst;
+
+        ker_args_t args;
+        size_t oc_offset = start % OC_;
+        size_t os_offset = start / OC_;
+        args.acc = acc + start;
+        args.dst = dst
+                   + (os_offset * dst_os_stride_ + oc_offset)
+                     * dst_data_type_size_;
+        args.bias = bias + (g * jcp_.oc + oc_offset) * bias_data_type_size_;
+        args.scales = scales + scale_idx_mult_ * (g * jcp_.oc + oc_offset);
+        args.sum_scale = sum_scale_;
+        args.signed_scale = signed_scale;
+        args.len = end - start;
+        args.oc_offset = oc_offset;
+        args.g_offset = g * jcp_.oc;
+        jit_generator::operator()(&args);
+    }
 
 private:
     void generate() override;
