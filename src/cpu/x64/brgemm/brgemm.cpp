@@ -25,6 +25,8 @@
 #include "cpu/x64/brgemm/jit_brdgmm_kernel.hpp"
 #include "cpu/x64/cpu_barrier.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
+// #include <iostream>
+// #include <chrono>
 
 namespace dnnl {
 namespace impl {
@@ -63,6 +65,23 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 
     (*brg_kernel)(&brgemm_p);
 }
+// static struct test_tick {
+//     int count = 0;
+//     uint64_t total = 0;
+//     std::chrono::high_resolution_clock::time_point start;
+//     void beg() {
+//         start = std::chrono::high_resolution_clock::now();
+//     }
+//     void end() {
+//         auto end = std::chrono::high_resolution_clock::now();
+//         auto d = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+//         total += (uint64_t)d;
+//         count++;
+//     }
+//     ~test_tick() {
+//         std::cout << "total " << total << " count " << count << "\n";
+//     }
+// } ticks;
 
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
@@ -80,7 +99,10 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.skip_accm = 0;
     brgemm_p.BS = bs;
     assert(brg_kernel);
+    //ticks.beg();
+    //for(int i = 0; i<1000; i++)
     (*brg_kernel)(&brgemm_p);
+    //ticks.end();
 }
 
 void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
@@ -109,7 +131,10 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.b_zp_compensations = post_ops_data.b_zp_compensations;
     brgemm_p.c_zp_values = post_ops_data.c_zp_values;
     assert(brg_kernel);
+    //ticks.beg();
+    //for(int i = 0; i<1000; i++)
     (*brg_kernel)(&brgemm_p);
+    //ticks.end();
 }
 
 void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
@@ -136,7 +161,10 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.dst_row_logical_off = post_ops_data.dst_row_logical_off;
     brgemm_p.first_mb_matrix_addr_off = post_ops_data.first_mb_matrix_addr_off;
     assert(brg_kernel);
+    //ticks.beg();
+    //for(int i = 0; i<1000; i++)
     (*brg_kernel)(&brgemm_p);
+    //ticks.end();
 }
 
 namespace {

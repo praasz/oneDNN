@@ -20,6 +20,8 @@
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
+// #include <chrono>
+// #include <iostream>
 
 namespace dnnl {
 namespace impl {
@@ -33,6 +35,24 @@ using namespace dnnl::impl::utils;
 using namespace nstl;
 
 using jit_conv_ker_t = void (*)(jit_conv_call_s *);
+
+// static struct test_ticks {
+//     int count = 0;
+//     uint64_t total = 0;
+//     std::chrono::high_resolution_clock::time_point start;
+//     void beg() {
+//         start = std::chrono::high_resolution_clock::now();
+//     }
+//     void end() {
+//         auto end = std::chrono::high_resolution_clock::now();
+//         auto d = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+//         total += (uint64_t)d;
+//         count++;
+//     }
+//     ~test_ticks() {
+//         std::cout << "jit total " << total << " count " << count << "\n";
+//     }
+// } ticks;
 
 inline void jit_conv_ker_pipeline(const jit_conv_ker_t ker, jit_conv_call_s &p,
         const void *src, const void *dst, const void *filt, const void *bias,
@@ -51,7 +71,10 @@ inline void jit_conv_ker_pipeline(const jit_conv_ker_t ker, jit_conv_call_s &p,
     p.oc_off = oc_off;
     p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
 
+    //ticks.beg();
+    //for(int i = 0; i<1000; i++)
     ker(&p);
+    //ticks.end();
 }
 // The special case for the driver with iw-parallelization (BWD)
 inline void jit_conv_ker_pipeline_iw_thr(const jit_conv_ker_t ker,
@@ -189,7 +212,23 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
             pd()->jcp_.oc - pd()->jcp_.oc_without_padding);
     bias = padded_bias;
 }
-
+// static struct test_tickss {
+//     int count = 0;
+//     uint64_t total = 0;
+//     std::chrono::high_resolution_clock::time_point start;
+//     void beg() {
+//         start = std::chrono::high_resolution_clock::now();
+//     }
+//     void end() {
+//         auto end = std::chrono::high_resolution_clock::now();
+//         auto d = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+//         total += (uint64_t)d;
+//         count++;
+//     }
+//     ~test_tickss() {
+//         std::cout << "jit out total " << total << " count " << count << "\n";
+//     }
+// } ticks1;
 template <data_type_t src_type, data_type_t wei_type, data_type_t dst_type>
 void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
         dst_type>::execute_forward_1d(const exec_ctx_t &ctx) const {
@@ -348,6 +387,7 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
     int work_amount = MB * nb_groups * oc_chunks * jcp.oh * jcp.nb_ow;
     int nthr = jcp.aligned_threads;
 
+//     ticks1.beg();
     parallel(nthr, [&](const int ithr, const int nthr) {
         int start {0}, end {0}, start_copy;
         balance211(work_amount, nthr, ithr, start, end);
@@ -479,6 +519,7 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
             }
         }
     });
+//     ticks1.end();
 }
 
 template <data_type_t src_type, data_type_t wei_type, data_type_t dst_type>

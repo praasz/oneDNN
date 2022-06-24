@@ -1180,7 +1180,7 @@ status_t jit_avx512_common_conv_fwd_kernel::init_conf(jit_conv_conf_t &jcp,
         }
 
         const int max_nb_oc = 5;
-        if (embd_bcast_condition) {
+        if (1&&embd_bcast_condition) {
             jcp.kernel_kind = embd_bcast;
             jcp.ur_w = nstl::min(jcp.ow, regs);
             jcp.nb_ic_blocking = jcp.nb_oc_blocking = 1;

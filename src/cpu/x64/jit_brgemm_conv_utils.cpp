@@ -548,7 +548,7 @@ void brg_blocking_t::select_ic_block() {
                 = static_cast<unsigned int>(ur) * oc_block * dst_dsz;
 
         max_simd_blocks = saturate(1, max_simd_blocks,
-                static_cast<int>((L2 - out_size)
+                static_cast<int>((1*L2 - out_size)
                         / ((wei_per_ic + inp_per_ic) * simd_w)));
 
         auto simd_blocks = 1;
@@ -565,6 +565,7 @@ void brg_blocking_t::select_ic_block() {
         ic_block = nstl::min(
                 (exec_type == exec_trans) ? rnd_up(ic, padded_ic) : ic,
                 simd_blocks * simd_w);
+        //ic_block = nstl::min(64, ic_block);
     }
     nb_ic = utils::div_up(ic, ic_block);
 }
@@ -1762,6 +1763,8 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
         if (jcp.dilate_d > 0 || jcp.dilate_h > 0 || jcp.dilate_w > 0)
             return status::unimplemented;
     }
+
+    //if (jcp.ic == 1 && jcp.oc == 1) return status::unimplemented;
 
     const memory_desc_wrapper src_d(&src_md);
     const memory_desc_wrapper weights_d(&weights_md);

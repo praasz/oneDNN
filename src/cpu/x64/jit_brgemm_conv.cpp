@@ -23,6 +23,8 @@
 
 #include "cpu/x64/amx_tile_configure.hpp"
 #include "cpu/x64/jit_brgemm_conv.hpp"
+//#include <iostream>
+#include <xmmintrin.h>
 
 namespace dnnl {
 namespace impl {
@@ -780,6 +782,23 @@ status_t brgemm_convolution_fwd_t<isa>::init(engine_t *engine) {
 
     return status::success;
 }
+// static struct test_ticksss {
+//     int count = 0;
+//     uint64_t total = 0;
+//     std::chrono::high_resolution_clock::time_point start;
+//     void beg() {
+//         start = std::chrono::high_resolution_clock::now();
+//     }
+//     void end() {
+//         auto end = std::chrono::high_resolution_clock::now();
+//         auto d = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+//         total += (uint64_t)d;
+//         count++;
+//     }
+//     ~test_ticksss() {
+//         std::cout << "brg all total " << total << " count " << count << "\n";
+//     }
+// } ticks2;
 template <cpu_isa_t isa>
 status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
     const auto _pd = pd();
@@ -853,8 +872,15 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
     // or made ic_chunks = 1 if use_buffer
     // or (looks more general) increase buffer size to store several rows
 
+    //ticks2.beg();
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         if (ithr >= work_amount) return;
+        unsigned int DENORMALS_ZERO = 0x0040;
+        unsigned int FLUSH_ZERO = 0x8000;
+        unsigned int csr = _mm_getcsr();
+        csr |= DENORMALS_ZERO;
+        csr |= FLUSH_ZERO;
+        _mm_setcsr(csr);
 
         brgemm_batch_element_t *const __restrict brg_batch = brg_batch_global
                 + static_cast<size_t>(ithr) * jcp.adjusted_batch_size;
@@ -901,69 +927,86 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
         int last_odb = -1;
         int last_ohb = -1;
         int last_owb = -1;
-        for (auto work = start; work < end; work++) {
-            btc.g = g;
-            btc.n = n;
-            btc.ocb = ocb;
-            btc.odb = odb;
-            btc.ohb = ohb;
-            btc.owb = owb;
-            btc.src_zp_vals = src_zp_vals;
-            btc.dst_zp_vals = jcp.dst_zero_point ? dst_zp_vals : nullptr;
-            btc.src_zp_comp_ptr
-                    = jcp.src_zero_point ? src_zp_comp_base : nullptr;
-            btc.s8s8_comp_ptr = jcp.s8s8_avx512 ? s8s8_comp_base : nullptr;
+        // for (int icc = 0; icc < ic_chunks; icc++) {
+        //     int n {0}, g {0}, ocb {0}, odb {0}, ohb {0}, owb {0};
+        //     if (jcp.loop_order == loop_ndhwgc)
+        //         nd_iterator_init(start, n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh,
+        //                 owb, jcp.nb_ow, g, jcp.ngroups, ocb, jcp.nb_oc);
+        //     else if (jcp.loop_order == loop_ngcdhw)
+        //         nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc,
+        //                 odb, jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
+        //     else
+        //         assert(!"Unknown loop order");
 
-            if (jcp.exec_type == exec_trans && (last_n != n || last_g != g)) {
-                if (!jcp.copy_block_only)
-                    std::memset(
+            for (auto work = start; work < end; work++) {
+                btc.g = g;
+                btc.n = n;
+                btc.ocb = ocb;
+                btc.odb = odb;
+                btc.ohb = ohb;
+                btc.owb = owb;
+                btc.src_zp_vals = src_zp_vals;
+                btc.dst_zp_vals = jcp.dst_zero_point ? dst_zp_vals : nullptr;
+                btc.src_zp_comp_ptr
+                    = jcp.src_zero_point ? src_zp_comp_base : nullptr;
+                btc.s8s8_comp_ptr = jcp.s8s8_avx512 ? s8s8_comp_base : nullptr;
+
+                if (jcp.exec_type == exec_trans && (last_n != n || last_g != g)) {
+                    if (!jcp.copy_block_only)
+                        std::memset(
                             inp_buffer_mask, false, jcp.inp_buffer_mask_size);
-            }
-            auto od_begin = odb * jcp.od_block;
-            auto od_end = nstl::min(OD, od_begin + jcp.od_block);
-            auto oh_begin = ohb * jcp.oh_block;
-            // if is_os_blocking is true then we do only one iteration of loop
-            // by oh and process entire oh block in kernel call
-            auto oh_end = jcp.is_os_blocking
+                }
+                auto od_begin = odb * jcp.od_block;
+                auto od_end = nstl::min(OD, od_begin + jcp.od_block);
+                auto oh_begin = ohb * jcp.oh_block;
+                // if is_os_blocking is true then we do only one iteration of loop
+                // by oh and process entire oh block in kernel call
+                auto oh_end = jcp.is_os_blocking
                     ? oh_begin + 1
                     : nstl::min(OH, oh_begin + jcp.oh_block);
-            for_(int od = od_begin; od < od_end; od++)
-            for (int oh = oh_begin; oh < oh_end; oh++) {
-                for (int icc = 0; icc < ic_chunks; icc++) {
-                    btc.od = od;
-                    btc.oh = oh;
-                    btc.icc = icc;
+                for_(int od = od_begin; od < od_end; od++)
+                    for (int oh = oh_begin; oh < oh_end; oh++) {
+                        for (int icc = 0; icc < ic_chunks; icc++) 
+                        {
+                            btc.od = od;
+                            btc.oh = oh;
+                            btc.icc = icc;
 
-                    if (jcp.exec_type == exec_base) {
-                        ker_base(btc);
-                    } else if (jcp.exec_type == exec_trans) {
-                        maybe_conv_inp(ithr, src, inp_buffer, inp_buffer_mask,
-                                g, n, icc, odb, ohb, owb, last_g, last_n,
-                                last_icc, last_odb, last_ohb, last_owb);
-                        ker_trans(btc, inp_buffer);
-                    } else if (jcp.exec_type == exec_vpad) {
-                        ker_vpad(btc);
-                    } else
-                        assert(!"Unknown exec type");
-                    last_n = n;
-                    last_g = g;
-                    last_icc = icc;
-                    last_odb = odb;
-                    last_ohb = ohb;
-                    last_owb = owb;
-                }
-            }
-            if (jcp.loop_order == loop_ndhwgc)
-                nd_iterator_step(n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh, owb,
+                            if (jcp.exec_type == exec_base) {
+                                ker_base(btc);
+                            }
+                            else if (jcp.exec_type == exec_trans) {
+                                maybe_conv_inp(ithr, src, inp_buffer, inp_buffer_mask,
+                                    g, n, icc, odb, ohb, owb, last_g, last_n,
+                                    last_icc, last_odb, last_ohb, last_owb);
+                                ker_trans(btc, inp_buffer);
+                            }
+                            else if (jcp.exec_type == exec_vpad) {
+                                ker_vpad(btc);
+                            }
+                            else
+                                assert(!"Unknown exec type");
+                            last_n = n;
+                            last_g = g;
+                            last_icc = icc;
+                            last_odb = odb;
+                            last_ohb = ohb;
+                            last_owb = owb;
+                        }
+                    }
+                if (jcp.loop_order == loop_ndhwgc)
+                    nd_iterator_step(n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh, owb,
                         jcp.nb_ow, g, jcp.ngroups, ocb, jcp.nb_oc);
-            else if (jcp.loop_order == loop_ngcdhw)
-                nd_iterator_step(n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc, odb,
+                else if (jcp.loop_order == loop_ngcdhw)
+                    nd_iterator_step(n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc, odb,
                         jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
-            else
-                assert(!"Unknown loop order");
+                else
+                    assert(!"Unknown loop order");
+            //}
         }
         if (is_amx) { amx_tile_release(); }
     });
+    //ticks2.end();
 
     if (_pd->wants_zero_pad_dst()) ctx.memory(DNNL_ARG_DST)->zero_pad(ctx);
 
