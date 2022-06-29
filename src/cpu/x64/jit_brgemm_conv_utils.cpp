@@ -544,11 +544,13 @@ void brg_blocking_t::select_ic_block() {
                 * kw_block * oc_block * wei_dsz;
         const auto inp_per_ic = static_cast<unsigned int>(kd_block) * kh_block
                 * inp_ur * src_dsz;
+                // inp_ur*/ * src_dsz * ow_block;
         const auto out_size
+                //= static_cast<unsigned int>(ur) * oc_block * dst_dsz * ow_block;
                 = static_cast<unsigned int>(ur) * oc_block * dst_dsz;
 
         max_simd_blocks = saturate(1, max_simd_blocks,
-                static_cast<int>((1*L2 - out_size)
+                static_cast<int>((1 *L2 - out_size)
                         / ((wei_per_ic + inp_per_ic) * simd_w)));
 
         auto simd_blocks = 1;
@@ -565,7 +567,8 @@ void brg_blocking_t::select_ic_block() {
         ic_block = nstl::min(
                 (exec_type == exec_trans) ? rnd_up(ic, padded_ic) : ic,
                 simd_blocks * simd_w);
-        //ic_block = nstl::min(64, ic_block);
+        //ic_block = 16;
+        // ic_block = nstl::min(16, ic_block);
     }
     nb_ic = utils::div_up(ic, ic_block);
 }
@@ -741,6 +744,8 @@ bool brg_blocking_t::fast_check_oc_block() const {
                 = id * ih * iw > 81 * stride_d * stride_h * stride_w;
         res = (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz <= 384 * 4
                 && big_spatial);
+    } else if (oc_block == 32) {
+        res =  (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz < 512 * 4);
     } else
         res = true;
 
@@ -1567,7 +1572,7 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     using namespace prop_kind;
 
     brg_blocking_t::L1 = platform::get_per_core_cache_size(1);
-    brg_blocking_t::L2 = platform::get_per_core_cache_size(2);
+    brg_blocking_t::L2 = platform::get_per_core_cache_size(2) * 5 / 5;
     brg_blocking_t::L3 = platform::get_per_core_cache_size(2);
 
     if (!mayiuse(avx512_core)) return status::unimplemented;
@@ -1800,8 +1805,13 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
             start_ocb = nstl::min(jcp.ic > 128 ? (jcp.ic > 256 ? 8 : 16) : 32,
                     div_up(jcp.oc, 16));
         start_ocb = nstl::min(div_up(jcp.oc, 16), start_ocb);
+        //start_ocb = 1;
 
         auto finish_ocb = 1;
+        // if (jcp.oc == 1024 && jcp.ic == 1024) {
+        //     finish_ocb = 3;
+        //     __debugbreak();
+        // }
         for (auto ocb = start_ocb; ocb >= finish_ocb; ocb--) {
             cur_brgb.oc_block = ocb * 16;
             cur_brgb.nb_oc = utils::div_up(jcp.oc, cur_brgb.oc_block);
@@ -1814,9 +1824,10 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
             if (st != status::success) continue;
             cur_brgb.eff = cur_brgb.est_eff();
             if (cur_brgb.eff > best_brgb.eff) best_brgb = cur_brgb;
+            //break;
         }
         if (best_brgb.oc_block == 0 || best_brgb.ic_block == 0
-                || best_brgb.ow_block == 0)
+                || best_brgb.ow_block == 0)// || best_brgb.nb_ic > 1 || jcp.ic_without_padding == 16)
             return false;
         best_brgb.save_to_jcp(jcp);
         selected_ur = best_brgb.ur;

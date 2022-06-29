@@ -1604,7 +1604,7 @@ void jit_brgemm_kernel_t::ldb_loop(int bd_block2, bool is_bdb_tail,
                             is_rd_tail, is_ld_tail, vpad, rows_for_rd_tail);
 
                     add(reg_aux_A, rdb_A_offset());
-                    add(reg_aux_B, rdb_B_offset());
+                     add(reg_aux_B, rdb_B_offset());
 
                     dec(reg_rdb_loop);
                     cmp(reg_rdb_loop, 0);

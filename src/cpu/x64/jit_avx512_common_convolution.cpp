@@ -388,7 +388,8 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
     int nthr = jcp.aligned_threads;
 
 //     ticks1.beg();
-    parallel(nthr, [&](const int ithr, const int nthr) {
+    parallel(1 * nthr, [&](const int ithr, const int nthr) {
+        //if (ithr >= 2) return;
         int start {0}, end {0}, start_copy;
         balance211(work_amount, nthr, ithr, start, end);
         start_copy = start;

@@ -183,7 +183,7 @@ private:
 
     void ker_base(brgemm_thread_ctx_t &btc) const;
     void ker_trans(brgemm_thread_ctx_t &btc, char *inp_buffer) const;
-    void ker_vpad(brgemm_thread_ctx_t &btc) const;
+    void ker_vpad(brgemm_thread_ctx_t &btc, int i) const;
 
     void perform_outwork(char *dst_base, char *dst, char *c_buffer,
             const char *bias_w, int od, int oh, int ow, int g_oc,

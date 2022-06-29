@@ -907,15 +907,15 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
                 : nullptr;
         dim_t start {0}, end {0};
         balance211(work_amount, nthr, ithr, start, end);
-        int n {0}, g {0}, ocb {0}, odb {0}, ohb {0}, owb {0};
-        if (jcp.loop_order == loop_ndhwgc)
-            nd_iterator_init(start, n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh,
-                    owb, jcp.nb_ow, g, jcp.ngroups, ocb, jcp.nb_oc);
-        else if (jcp.loop_order == loop_ngcdhw)
-            nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc,
-                    odb, jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
-        else
-            assert(!"Unknown loop order");
+        //int n {0}, g {0}, ocb {0}, odb {0}, ohb {0}, owb {0};
+        //if (jcp.loop_order == loop_ndhwgc)
+        //    nd_iterator_init(start, n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh,
+        //            owb, jcp.nb_ow, g, jcp.ngroups, ocb, jcp.nb_oc);
+        //else if (jcp.loop_order == loop_ngcdhw)
+        //    nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc,
+        //            odb, jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
+        //else
+        //    assert(!"Unknown loop order");
 
         brgemm_thread_ctx_t btc(
                 brgemm_ctx, ithr, brg_batch, c_buffer, wsp_tile);
@@ -927,16 +927,16 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
         int last_odb = -1;
         int last_ohb = -1;
         int last_owb = -1;
-        // for (int icc = 0; icc < ic_chunks; icc++) {
-        //     int n {0}, g {0}, ocb {0}, odb {0}, ohb {0}, owb {0};
-        //     if (jcp.loop_order == loop_ndhwgc)
-        //         nd_iterator_init(start, n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh,
-        //                 owb, jcp.nb_ow, g, jcp.ngroups, ocb, jcp.nb_oc);
-        //     else if (jcp.loop_order == loop_ngcdhw)
-        //         nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc,
-        //                 odb, jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
-        //     else
-        //         assert(!"Unknown loop order");
+         for (int icc = 0; icc < ic_chunks; icc++) {
+             int n {0}, g {0}, ocb {0}, odb {0}, ohb {0}, owb {0};
+             if (jcp.loop_order == loop_ndhwgc)
+                 nd_iterator_init(start, n, jcp.mb, odb, jcp.nb_od, ohb, jcp.nb_oh,
+                         owb, jcp.nb_ow, g, jcp.ngroups, ocb, jcp.nb_oc);
+             else if (jcp.loop_order == loop_ngcdhw)
+                 nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ocb, jcp.nb_oc,
+                         odb, jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
+             else
+                 assert(!"Unknown loop order");
 
             for (auto work = start; work < end; work++) {
                 btc.g = g;
@@ -966,7 +966,7 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
                     : nstl::min(OH, oh_begin + jcp.oh_block);
                 for_(int od = od_begin; od < od_end; od++)
                     for (int oh = oh_begin; oh < oh_end; oh++) {
-                        for (int icc = 0; icc < ic_chunks; icc++) 
+                        //for (int icc = 0; icc < ic_chunks; icc++) 
                         {
                             btc.od = od;
                             btc.oh = oh;
@@ -982,7 +982,7 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
                                 ker_trans(btc, inp_buffer);
                             }
                             else if (jcp.exec_type == exec_vpad) {
-                                ker_vpad(btc);
+                                ker_vpad(btc, ithr);
                             }
                             else
                                 assert(!"Unknown exec type");
@@ -1002,7 +1002,7 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
                         jcp.nb_od, ohb, jcp.nb_oh, owb, jcp.nb_ow);
                 else
                     assert(!"Unknown loop order");
-            //}
+            }
         }
         if (is_amx) { amx_tile_release(); }
     });
@@ -1744,9 +1744,12 @@ void brgemm_convolution_fwd_t<isa>::ker_trans(
                 do_init, do_postwork, false);
     }
 }
+// static __declspec(align(128)) float dstx[4][1024 * 1024] = {4.0f};
+// static __declspec(align(128)) float srcx[4][1024 * 1024] = {2.0f};
+// static __declspec(align(128)) float weix[4][10240 * 1024 * 9] = {3.0f};
 
 template <cpu_isa_t isa>
-void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
+void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc, int iiii) const {
 
     const auto _pd = pd();
     const auto &jcp = _pd->jcp_;
@@ -1757,9 +1760,12 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
 
     const char *const __restrict src_base
             = src + src_dsz * (btc.n * src_d_sz + g_ic);
-
-    const char *const __restrict wei_base
+    //const char *const __restrict src_base
+    //        = (char*)srcx[iiii];
+    const char* const __restrict wei_base
+            //= (char*)weix[0];
             = weights + wei_dsz * (btc.g * wei_ocb_sz + btc.ocb * wei_kd_sz);
+            //= (char*)weix[iiii] + wei_dsz * (btc.g * wei_ocb_sz + btc.ocb * wei_kd_sz);
 
     const int ow_b {ow}, ow_e {ow + (is_ow_tail ? jcp.M_tail : jcp.M)};
     iiw_b = ow_b * SW - LP;
