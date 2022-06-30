@@ -737,15 +737,19 @@ bool brg_blocking_t::fast_check_oc_block() const {
     // TODO: eliminate heuristic in this function
     const auto rnd_oc = rnd_up(oc, 16);
     auto res = false;
+    unsigned int min_oc_block = L2 / (kd * kh * kw * 64 * ic);
     if (oc_block == 64) {
-        res = (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz < 192 * 4);
+        res = (rnd_oc % oc_block == 0 && min_oc_block >= 4); //rnd_oc * wei_dsz < 192 * 4);
     } else if (oc_block == 48) {
-        const bool big_spatial
-                = id * ih * iw > 81 * stride_d * stride_h * stride_w;
-        res = (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz <= 384 * 4
-                && big_spatial);
+        if (rnd_oc % oc_block == 0 && min_oc_block >= 3)
+            res = true;
+        // const bool big_spatial
+        //         = id * ih * iw > 81 * stride_d * stride_h * stride_w;
+        // res = (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz <= 384 * 4
+        //         && big_spatial);
     } else if (oc_block == 32) {
-        res =  (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz < 512 * 4);
+        if (rnd_oc % oc_block == 0 && min_oc_block >= 2)
+            res = true;
     } else
         res = true;
 
