@@ -48,6 +48,10 @@
 #include "softmax/softmax.hpp"
 #include "sum/sum.hpp"
 #include "zeropad/zeropad.hpp"
+#include "tbb/parallel_for.h"
+#include "tbb/task_arena.h"
+#include "tbb/task.h"
+#include "tbb/task_scheduler_init.h"
 
 int verbose {0};
 bool canonical {false};
@@ -81,6 +85,7 @@ int main(int argc, char **argv) {
     if (parse_main_help(argv[0])) return 0;
 
     init_fp_mode();
+    tbb::task_scheduler_init init(4);
 
     for (; argc > 0; --argc, ++argv)
         if (!parse_bench_settings(argv[0])) break;

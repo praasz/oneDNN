@@ -740,6 +740,8 @@ bool brg_blocking_t::fast_check_oc_block() const {
                 = id * ih * iw > 81 * stride_d * stride_h * stride_w;
         res = (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz <= 384 * 4
                 && big_spatial);
+    } else if (oc_block == 32) {
+        res =  (rnd_oc % oc_block == 0 && rnd_oc * wei_dsz < 512 * 4);
     } else
         res = true;
 
