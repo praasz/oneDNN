@@ -86,7 +86,7 @@ status_t pick_tags(jit_brgemm_conv_conf_t &jcp, memory_desc_t &src_md,
         memory_desc_t &weights_md, memory_desc_t &dst_md,
         memory_desc_t &bias_md) {
     format_tag_t src_tag, dst_tag, wei_tag;
-    dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
+    dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
 
     const memory_desc_wrapper src_d(&src_md);
     const memory_desc_wrapper weights_d(&weights_md);
@@ -578,8 +578,10 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
             : (kh_sets > 1 ? kh_sets : 1) * (kw_sets > 1 ? kw_sets : stride_w)
                     * (exec_type == exec_trans ? ic_block
                                                : ngroups * ic_without_padding);
+    LDA = 16;
     LDB = oc_block;
     LDC = use_buffer ? oc_block : oc_without_padding;
+    LDC = 16;
 
     // Configure matrix sizes
     // for amx if ic_block != ic then we use exec_trans so K is ic_block
@@ -649,7 +651,7 @@ status_t brg_blocking_t::get_brgemm_ur(
         return status::invalid_arguments;
     CHECK(estimate_brgemm_ur());
 
-    LDD = oc_without_padding;
+    LDD = LDC;// oc_without_padding;
 
     const float alpha = 1.0;
     const float beta = 1.0;
@@ -1726,7 +1728,7 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.brgemm_bd_loop_innermost = false;
 
     // fast check data layout before spending time for blocking selection
-    format_tag_t src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
+    format_tag_t src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
     CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
