@@ -315,7 +315,7 @@ status_t pick_tags(jit_brgemm_conv_conf_t &jcp, memory_desc_t &src_md,
                 UNUSED(is_2d);
 
                 if (jcp.wei_dt == f32)
-                    wei_tag = with_groups ? gOhwi16o : Ohwi16o;
+                    wei_tag = with_groups ? gOIhw16i16o : OIhw16i16o;
                 else if (jcp.wei_dt == s8) {
                     if (jcp.is_ic_padded)
                         wei_tag = with_groups ? gOhwI16i16o4i : OhwI16i16o4i;
@@ -565,6 +565,7 @@ void brg_blocking_t::select_ic_block() {
         ic_block = nstl::min(
                 (exec_type == exec_trans) ? rnd_up(ic, padded_ic) : ic,
                 simd_blocks * simd_w);
+        ic_block = 16;
     }
     nb_ic = utils::div_up(ic, ic_block);
 }
@@ -1802,6 +1803,7 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
             start_ocb = nstl::min(jcp.ic > 128 ? (jcp.ic > 256 ? 8 : 16) : 32,
                     div_up(jcp.oc, 16));
         start_ocb = nstl::min(div_up(jcp.oc, 16), start_ocb);
+        start_ocb = 1;
 
         auto finish_ocb = 1;
         for (auto ocb = start_ocb; ocb >= finish_ocb; ocb--) {

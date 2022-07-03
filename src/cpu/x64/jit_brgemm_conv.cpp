@@ -1731,7 +1731,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
             = src + src_dsz * (btc.n * src_d_sz + g_ic);
 
     const char *const __restrict wei_base
-            = weights + wei_dsz * (btc.g * wei_ocb_sz + btc.ocb * wei_kd_sz);
+            = weights + wei_dsz * (btc.g * wei_ocb_sz + btc.ocb * wei_kd_sz + g_ic * 16 * 9);
 
     const int ow_b {ow}, ow_e {ow + (is_ow_tail ? jcp.M_tail : jcp.M)};
     iiw_b = ow_b * SW - LP;
@@ -1756,7 +1756,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
         for (int i_icb = 0; i_icb < n_ic_blocks; i_icb++) {
             const auto ic_off = (ic_block_s + i_icb) * jcp.ic_block;
             const auto src_ic = ic_off;
-            const auto wei_ic = ic + ic_off;
+            const auto wei_ic = ic_off;// ic + ic_off;
             const auto n_icb_off = i_icb * k_l;
             const char *const __restrict src_base_ic
                     = src_base + src_dsz * src_ic;
@@ -1777,7 +1777,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
                     const char *const __restrict src_base_kh
                             = src_base_kd + src_dsz * ih * src_w_sz;
                     const char *const __restrict wei_base_kh
-                            = wei_base_kd + wei_dsz * kh * wei_kw_sz;
+                            = wei_base_kd + wei_dsz * kh * 256 *3;
                     for (int kw = 0; kw < KW; kw++) {
                         const auto iw = iiw_b + kw * DW;
                         const auto ptr_A = src_base_kh
@@ -1789,7 +1789,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
                         }
                         // general wei layout is gOdhwI<block_o><block_i>
                         const auto ptr_B
-                                = wei_base_kh + wei_dsz * kw * wei_ic_sz;
+                                = wei_base_kh + wei_dsz * kw * 256;
 
                         icb_batch[k].ptr.A = ptr_A;
                         icb_batch[k].ptr.B = ptr_B;
