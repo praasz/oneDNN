@@ -23,6 +23,7 @@
 
 #include "cpu/x64/amx_tile_configure.hpp"
 #include "cpu/x64/jit_brgemm_conv.hpp"
+#include <xmmintrin.h>
 
 namespace dnnl {
 namespace impl {
@@ -259,7 +260,8 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
                 }
                 CHECK(brgemm_desc_set_attr(brg, brgattr));
 
-                auto LDD = jcp_.oc_without_padding;
+                // auto LDD = jcp_.oc_without_padding;
+                auto LDD = jcp_.LDC;// jcp_.oc_without_padding;
                 brg->with_sum = with_sum;
                 CHECK(brgemm_desc_set_postops(
                         brg, attr(), &dst_md_, LDD, jcp_.bia_dt));
@@ -855,6 +857,12 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         if (ithr >= work_amount) return;
+        unsigned int DENORMALS_ZERO = 0x0040;
+        unsigned int FLUSH_ZERO = 0x8000;
+        unsigned int csr = _mm_getcsr();
+        csr |= DENORMALS_ZERO;
+        csr |= FLUSH_ZERO;
+        _mm_setcsr(csr);
 
         brgemm_batch_element_t *const __restrict brg_batch = brg_batch_global
                 + static_cast<size_t>(ithr) * jcp.adjusted_batch_size;
@@ -1713,17 +1721,19 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
     MAYBE_UNUSED(is_oh_tail);
 
     const char *const __restrict src_base
-            = src + src_dsz * (btc.n * src_d_sz + g_ic);
+            = src + src_dsz * (btc.n * src_d_sz + g_ic / 16 * jcp.ih * jcp.iw * jcp.id * 16);
+            // = src + src_dsz * (btc.n * src_d_sz + g_ic);
 
     const char *const __restrict wei_base
             = weights + wei_dsz * (btc.g * wei_ocb_sz + btc.ocb * wei_kd_sz);
 
     const int ow_b {ow}, ow_e {ow + (is_ow_tail ? jcp.M_tail : jcp.M)};
     iiw_b = ow_b * SW - LP;
-    ptr_D = dst_base
+    ptr_D = dst
             + dst_dsz
-                    * (btc.od * dst_h_sz + btc.oh * dst_w_sz
-                            + ow_b * jcp.oc_without_padding);
+                    * (btc.od * dst_h_sz + btc.ocb * jcp.ow * jcp.oh * 16
+                            + btc.oh * jcp.ow * 16
+                            + ow_b * 16);
     ptr_C = (jcp.use_buffer) ? btc.c_buffer + acc_dsz * (ow_b - ow) * jcp.LDC
                              : static_cast<char *>(ptr_D);
 
@@ -1760,14 +1770,15 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
                 for (int kh = kh_b; kh < kh_e; kh++) {
                     const auto ih = iih + kh * DH;
                     const char *const __restrict src_base_kh
-                            = src_base_kd + src_dsz * ih * src_w_sz;
+                            //= src_base_kd + src_dsz * ih * src_w_sz;
+                            = src_base_kd + src_dsz * ih * (jcp.iw * 16);
                     const char *const __restrict wei_base_kh
                             = wei_base_kd + wei_dsz * kh * wei_kw_sz;
                     for (int kw = 0; kw < KW; kw++) {
                         const auto iw = iiw_b + kw * DW;
                         const auto ptr_A = src_base_kh
                                 + static_cast<ptrdiff_t>(src_dsz) * iw
-                                        * jcp.ngroups * jcp.ic_without_padding;
+                                        * jcp.ngroups * 16;
                         if (jcp.max_vpad) {
                             icb_batch[k].vvpad.top = kw_top_vpads[kw];
                             icb_batch[k].vvpad.bottom = kw_bottom_vpads[kw];

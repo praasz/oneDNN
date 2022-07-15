@@ -25,6 +25,7 @@
 #include "cpu/x64/amx_tile_configure.hpp"
 #include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/jit_brgemm_1x1_conv.hpp"
+#include <xmmintrin.h>
 
 namespace dnnl {
 namespace impl {
@@ -487,6 +488,12 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::execute_forward_all(
 #define BRGC_WO(...) \
     parallel(pd()->jcp_.nthr, [&](const int ithr, const int nthr) { \
         if (ithr >= work_amount) return; \
+        unsigned int DENORMALS_ZERO = 0x0040; \
+        unsigned int FLUSH_ZERO = 0x8000; \
+        unsigned int csr = _mm_getcsr(); \
+        csr |= DENORMALS_ZERO; \
+        csr |= FLUSH_ZERO; \
+        _mm_setcsr(csr); \
         brgemm_batch_element_t *const brg_batch \
                 = brg_batch_global + (size_t)ithr * jcp.adjusted_batch_size; \
         char *const c_buffer = (jcp.use_buffer) \
@@ -552,6 +559,12 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::execute_forward_all(
 #define BRGC_WO(...) \
     parallel(pd()->jcp_.nthr, [&](const int ithr, const int nthr) { \
         if (ithr >= work_amount) return; \
+        unsigned int DENORMALS_ZERO = 0x0040; \
+        unsigned int FLUSH_ZERO = 0x8000; \
+        unsigned int csr = _mm_getcsr(); \
+        csr |= DENORMALS_ZERO; \
+        csr |= FLUSH_ZERO; \
+        _mm_setcsr(csr); \
         brgemm_batch_element_t *const brg_batch \
                 = brg_batch_global + (size_t)ithr * jcp.adjusted_batch_size; \
         char *const c_buffer = (jcp.use_buffer) \
