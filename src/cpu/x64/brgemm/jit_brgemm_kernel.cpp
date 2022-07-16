@@ -349,10 +349,12 @@ int jit_brgemm_kernel_t::B_offset(int ld, int rd, bool is_amx) const noexcept {
             : brg.typesize_B * (rd * brg.LDB + brg.rd_step * ld * brg.ld_block);
 }
 int jit_brgemm_kernel_t::C_offset(int bd, int ld) const noexcept {
-    return brg.typesize_C * (bd * brg.LDC + ld * brg.ld_block);
+    return !brg.use_block_layout ? brg.typesize_C * (bd * brg.LDC + ld * brg.ld_block) :
+           brg.typesize_C * (bd * brg.LDC + ld * brg.BLDC);
 }
 int jit_brgemm_kernel_t::D_offset(int bd, int ld) const noexcept {
-    return brg.typesize_D * (bd * brg.LDD + ld * brg.ld_block);
+    return !brg.use_block_layout ? brg.typesize_D * (bd * brg.LDD + ld * brg.ld_block) :
+           brg.typesize_D * (bd * brg.LDD + ld * brg.BLDD);
 }
 int jit_brgemm_kernel_t::po_offset(int bd, int ld) const noexcept {
     return bd * brg.LDD + ld * brg.ld_block;

@@ -1818,7 +1818,6 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
                     div_up(jcp.oc, 16));
         start_ocb = nstl::min(div_up(jcp.oc, 16), start_ocb);
 
-        start_ocb = 1;
         auto finish_ocb = 1;
         for (auto ocb = start_ocb; ocb >= finish_ocb; ocb--) {
             cur_brgb.oc_block = ocb * 16;

@@ -1734,7 +1734,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
                             + ow_b * jcp.oc_without_padding) :
             dst
             + dst_dsz
-                    * (btc.od * dst_h_sz + btc.ocb * jcp.ow * jcp.oh * 16
+                    * (btc.od * dst_h_sz + btc.ocb * jcp.ow * jcp.oh * jcp.oc_block
                             + btc.oh * jcp.ow * 16
                             + ow_b * 16);
     ptr_C = (jcp.use_buffer) ? btc.c_buffer + acc_dsz * (ow_b - ow) * jcp.LDC
