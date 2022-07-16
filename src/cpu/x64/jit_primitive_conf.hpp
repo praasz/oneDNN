@@ -946,6 +946,9 @@ struct jit_brgemm_conv_conf_t {
     bool src_zero_point;
     bool dst_zero_point;
     bool comp_with_vpads;
+
+    bool use_block_layout;
+    int BLDA, BLDC, BLDD;
 };
 
 struct jit_shuffle_conf_t {

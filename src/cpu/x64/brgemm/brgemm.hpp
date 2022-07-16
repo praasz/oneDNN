@@ -67,7 +67,8 @@ status_t DNNL_API brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
         impl::data_type_t dt_b, bool transA, bool transB,
         brgemm_layout_t layout, float alpha, float beta, dim_t LDA, dim_t LDB,
         dim_t LDC, dim_t M, dim_t N, dim_t K,
-        const brgemm_strides_t *strides = nullptr);
+        const brgemm_strides_t *strides = nullptr,
+        bool use_block_layout = false, dim_t BLDA = 0, dim_t BLDC = 0);
 
 /// Initializes a BRGEMM descriptor with B matrix as a diagonal matrix
 /// represented in packed vector format.
@@ -100,7 +101,8 @@ status_t DNNL_API brdgmm_desc_init(brgemm_t *brg, cpu_isa_t isa,
         brgemm_batch_kind_t type, impl::data_type_t dt_a,
         impl::data_type_t dt_b, bool transA, brgemm_layout_t layout,
         float alpha, float beta, dim_t LDA, dim_t LDC, dim_t M, dim_t N,
-        const brgemm_strides_t *strides = nullptr);
+        const brgemm_strides_t *strides = nullptr,
+        bool use_block_layout = false, dim_t BLDA = 0, dim_t BLDC = 0);
 
 /// Adds post-operations to BRGEMM descriptor
 ///

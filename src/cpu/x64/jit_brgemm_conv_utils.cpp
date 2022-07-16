@@ -84,10 +84,12 @@ bool post_ops_ok(jit_brgemm_conv_conf_t &jcp, primitive_attr_t &attr,
 
 status_t pick_tags(jit_brgemm_conv_conf_t &jcp, memory_desc_t &src_md,
         memory_desc_t &weights_md, memory_desc_t &dst_md,
-        memory_desc_t &bias_md) {
+        memory_desc_t &bias_md, bool use_block_layout) {
     format_tag_t src_tag, dst_tag, wei_tag;
-    //dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
-    dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+    if (use_block_layout)
+        dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+    else
+        dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
 
     const memory_desc_wrapper src_d(&src_md);
     const memory_desc_wrapper weights_d(&weights_md);
@@ -566,7 +568,7 @@ void brg_blocking_t::select_ic_block() {
         ic_block = nstl::min(
                 (exec_type == exec_trans) ? rnd_up(ic, padded_ic) : ic,
                 simd_blocks * simd_w);
-        ic_block = 16;
+        //ic_block = use_block_layout ? 16 : ic_block;
     }
     nb_ic = utils::div_up(ic, ic_block);
 }
@@ -579,10 +581,16 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
             : (kh_sets > 1 ? kh_sets : 1) * (kw_sets > 1 ? kw_sets : stride_w)
                     * (exec_type == exec_trans ? ic_block
                                                : ngroups * ic_without_padding);
-    LDA = 16;
     LDB = oc_block;
-    LDC = use_buffer ? oc_block : oc_without_padding;
-    LDC = 16;
+    if (use_block_layout) {
+        LDA = 16;
+        LDC = 16;
+        BLDA = ih * iw * id * 16;
+        BLDC = oh * ow * od * 16;
+        BLDD = BLDC;
+    } else {
+        LDC = use_buffer ? oc_block : oc_without_padding;
+    }
 
     // Configure matrix sizes
     // for amx if ic_block != ic then we use exec_trans so K is ic_block
@@ -630,14 +638,14 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
     const float beta = 0.0;
     brgemm_t brg;
     CHECK(brgemm_desc_init(&brg, isa, brgemm_addr, src_dt, wei_dt, false, false,
-            brgemm_row_major, alpha, beta, LDA, LDB, LDC, vM, vN, vK));
+            brgemm_row_major, alpha, beta, LDA, LDB, LDC, vM, vN, vK, nullptr, use_block_layout, BLDA, BLDC));
     ur = brg.bd_block * (is_amx(isa) ? brg.bd_block2 : 1);
     ur_block = brg.bd_block;
     if (is_1x1 && is_amx(isa) && M > 0 && M_tail > 0) {
         brgemm_t brg_sp_tail;
         CHECK(brgemm_desc_init(&brg_sp_tail, isa, brgemm_addr, src_dt, wei_dt,
                 false, false, brgemm_row_major, alpha, beta, LDA, LDB, LDC,
-                M_tail, vN, vK));
+                M_tail, vN, vK, nullptr, use_block_layout, BLDA, BLDC));
         ur_block_tail = brg_sp_tail.bd_block;
     } else {
         ur_block_tail = 0;
@@ -652,7 +660,7 @@ status_t brg_blocking_t::get_brgemm_ur(
         return status::invalid_arguments;
     CHECK(estimate_brgemm_ur());
 
-    LDD = LDC;// oc_without_padding;
+    LDD = use_block_layout ? LDC : oc_without_padding;
 
     const float alpha = 1.0;
     const float beta = 1.0;
@@ -683,7 +691,7 @@ status_t brg_blocking_t::get_brgemm_ur(
                             : nullptr;
                     CHECK(brgemm_desc_init(&brg, isa, brg_type, src_dt, wei_dt,
                             false, false, brgemm_row_major, alpha, vbeta, LDA,
-                            LDB, LDC, vM, vN, vK, strides_ptr));
+                            LDB, LDC, vM, vN, vK, strides_ptr, use_block_layout, BLDA, BLDC));
 
                     brgemm_attr_t brgattr;
                     brgattr.max_bs = max_batch;
@@ -1725,10 +1733,14 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.use_interleave_stores = false;
     jcp.hint_prefetching = brgemm_kernel_prefetching_t::brgemm_prf_default;
     jcp.brgemm_bd_loop_innermost = false;
+    jcp.use_block_layout = jcp.src_dt == data_type::f32;
 
     // fast check data layout before spending time for blocking selection
-    //format_tag_t src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
-    format_tag_t src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+    format_tag_t src_tag;
+    if (jcp.use_block_layout)
+        src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+    else
+        src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
     CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
@@ -1806,6 +1818,7 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
                     div_up(jcp.oc, 16));
         start_ocb = nstl::min(div_up(jcp.oc, 16), start_ocb);
 
+        start_ocb = 1;
         auto finish_ocb = 1;
         for (auto ocb = start_ocb; ocb >= finish_ocb; ocb--) {
             cur_brgb.oc_block = ocb * 16;
@@ -1936,7 +1949,7 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.adjusted_batch_size
             = div_up(rnd_up(jcp.gemm_batch_size * sc_size, P4K), sc_size);
 
-    CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md));
+    CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md, jcp.use_block_layout));
     CHECK(attr.set_default_formats(&dst_md));
 
     const auto &oscales = attr.output_scales_;
@@ -2126,7 +2139,7 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.use_uker = is_amx(isa);
     if (jcp.use_uker)
         jcp.hint_prefetching = brgemm_kernel_prefetching_t::brgemm_prf_output1;
-    CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md));
+    CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md, false));
     CHECK(attr.set_default_formats(&dst_md));
 
     const auto &oscales = attr.output_scales_;
