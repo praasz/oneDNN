@@ -246,6 +246,8 @@ private:
             SD, SH, SW, FP, TP, LP, DD, DH, DW;
     dim_t src_w_sz, src_h_sz, src_d_sz, dst_w_sz, dst_h_sz, dst_d_sz, wei_ic_sz,
             wei_kw_sz, wei_kh_sz, wei_kd_sz, wei_ocb_sz;
+    dim_t src_w_sz_padding, src_h_sz_padding, src_d_sz_padding, src_c_sz_padding, src_g_sz_padding;
+    dim_t dst_w_sz_padding, dst_h_sz_padding, dst_d_sz_padding, dst_c_sz_padding, dst_g_sz_padding;
     dim_t pbuf_w_sz, pbuf_h_sz, pbuf_d_sz;
     dim_t ker_vpad_sz, comp_ocb_sz, comp_ker_sz, comp_kw_sz;
 

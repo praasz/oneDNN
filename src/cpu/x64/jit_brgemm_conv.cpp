@@ -76,6 +76,26 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
     CHECK(brgemm_convolution_utils::init_conf(jcp_, isa, *desc(), src_md_,
             weights_md_, dst_md_, bias_md_, attr_, dnnl_get_max_threads()));
 
+    if (jcp_.use_block_layout) {
+        // TODOs:(WA, disable unsupported case)
+        // 1, use_buffer
+        // 2, kern_base
+        // 3, perform_outwork
+
+        // TODO: when using buffer the stride is not adjacent between 2-16 block.
+        if (jcp_.use_buffer && jcp_.oc_block != 16)
+            return status::unimplemented;
+        
+        // TODO: ow padding is too large
+        if (jcp_.exec_type != exec_vpad)
+            return status::unimplemented;
+
+        // TODO: oh/od padding are too large
+        if (jcp_.t_pad >= jcp_.kh || jcp_.b_pad >= jcp_.kh ||
+            jcp_.f_pad >= jcp_.kd || jcp_.back_pad >= jcp_.kd)
+            return status::unimplemented;
+    }
+
     const auto adj_M = nstl::max(jcp_.M, jcp_.M_tail);
 
     // 1. Use unrolled kernel for exec_trans only to avoid creation a lot of kernels for each kw range
@@ -518,6 +538,17 @@ status_t brgemm_convolution_fwd_t<isa>::init(engine_t *engine) {
     dst_w_sz = static_cast<dim_t>(OW) * jcp.oc_without_padding;
     dst_h_sz = OH * dst_w_sz;
     dst_d_sz = OD * dst_h_sz;
+
+    src_w_sz_padding = static_cast<dim_t>(IW) * 16;
+    src_h_sz_padding = IH * src_w_sz_padding;
+    src_d_sz_padding = ID * src_h_sz_padding;
+    src_c_sz_padding = div_up(jcp.ic, 16) / 16 * src_d_sz_padding;
+    src_g_sz_padding = jcp.ngroups * src_c_sz_padding;
+    dst_w_sz_padding = static_cast<dim_t>(OW) * 16;
+    dst_h_sz_padding = OH * dst_w_sz_padding;
+    dst_d_sz_padding = OD * dst_h_sz_padding;
+    dst_c_sz_padding = div_up(jcp.oc, 16) / 16 * dst_d_sz_padding;
+    dst_g_sz_padding = jcp.ngroups * dst_c_sz_padding;
 
     const auto src_type = pd()->src_md(0)->data_type;
     const auto wei_type = pd()->weights_md(0)->data_type;
@@ -1720,7 +1751,8 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
     MAYBE_UNUSED(is_oh_tail);
 
     const char *const __restrict src_base
-            = jcp.use_block_layout ? src + src_dsz * (btc.n * src_d_sz + g_ic / 16 * jcp.ih * jcp.iw * jcp.id * 16) :
+            = jcp.use_block_layout ? src + src_dsz * (
+                btc.n * src_g_sz_padding + btc.g * src_c_sz_padding + (ic / 16) * src_d_sz_padding) :
             src + src_dsz * (btc.n * src_d_sz + g_ic);
 
     const char *const __restrict wei_base
@@ -1734,9 +1766,10 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
                             + ow_b * jcp.oc_without_padding) :
             dst
             + dst_dsz
-                    * (btc.od * dst_h_sz + btc.ocb * jcp.ow * jcp.oh * jcp.oc_block
-                            + btc.oh * jcp.ow * 16
-                            + ow_b * 16);
+                    * (btc.n * dst_g_sz_padding + btc.g * dst_c_sz_padding + 
+                       btc.ocb * jcp.oc_block  / 16 * dst_d_sz_padding + btc.od * dst_h_sz_padding +
+                       btc.oh * dst_w_sz_padding +
+                       ow_b * 16);
     ptr_C = (jcp.use_buffer) ? btc.c_buffer + acc_dsz * (ow_b - ow) * jcp.LDC
                              : static_cast<char *>(ptr_D);
 
@@ -1756,6 +1789,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
             const auto src_ic = ic_off;
             const auto wei_ic = ic + ic_off;
             const auto n_icb_off = i_icb * k_l;
+            // TODO: fix src when it's block format
             const char *const __restrict src_base_ic
                     = src_base + src_dsz * src_ic;
             const char *const __restrict wei_base_ic
@@ -1767,13 +1801,14 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
             for (int kd = kd_b; kd < kd_e; kd++) {
                 const auto id = iid + kd * DD;
                 const char *const __restrict src_base_kd
-                        = src_base_ic + src_dsz * id * src_h_sz;
+                        = jcp.use_block_layout ? src_base_ic + src_dsz * id * src_h_sz_padding :
+                          src_base_ic + src_dsz * id * src_h_sz;
                 const char *const __restrict wei_base_kd
                         = wei_base_ic + wei_dsz * kd * wei_kh_sz;
                 for (int kh = kh_b; kh < kh_e; kh++) {
                     const auto ih = iih + kh * DH;
                     const char *const __restrict src_base_kh
-                            = jcp.use_block_layout ? src_base_kd + src_dsz * ih * (jcp.iw * 16) :
+                            = jcp.use_block_layout ? src_base_kd + src_dsz * ih * src_w_sz_padding :
                               src_base_kd + src_dsz * ih * src_w_sz;
                     const char *const __restrict wei_base_kh
                             = wei_base_kd + wei_dsz * kh * wei_kw_sz;
