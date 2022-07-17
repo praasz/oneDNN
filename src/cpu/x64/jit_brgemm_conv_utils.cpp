@@ -1733,17 +1733,18 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.use_interleave_stores = false;
     jcp.hint_prefetching = brgemm_kernel_prefetching_t::brgemm_prf_default;
     jcp.brgemm_bd_loop_innermost = false;
-    jcp.use_block_layout = jcp.src_dt == data_type::f32;
 
     // fast check data layout before spending time for blocking selection
-    format_tag_t src_tag;
-    if (jcp.use_block_layout)
-        src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
-    else
-        src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
+    format_tag_t src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
-    CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
+    if (init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible) != status::success) {
+        // try block format
+        src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+        CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
+        if (jcp.src_dt != data_type::f32) return status::unimplemented;
+        jcp.use_block_layout = true;
+    }
 
     const auto ic_padded_block = 16 * brg_blocking_t::last_ic_block_size;
     jcp.is_ic_padded = !jcp.is_1x1 && one_of(jcp.wei_dt, bf16, s8)

@@ -1769,7 +1769,12 @@ void jit_brgemm_kernel_t::bdb_loop() {
         if (brg.ldb_tail > 0) {
             const bool is_ld_reg_tail
                     = (brg.ldb2 == 0 && brg.ldb2_tail == 0) ? false : true;
-            const bool is_ld_tail = true;
+            const bool is_ld_tail = brg.use_block_layout ? false : true;
+            if (brg.use_block_layout) {
+                // move pointer to tail block
+                add(reg_aux_C, brg.ldb * brg.typesize_C * (brg.BLDC - brg.ld_block));
+                add(reg_aux_D, brg.ldb * brg.typesize_D * (brg.BLDD - brg.ld_block));
+            }
             ldb_loop(bd_block2, is_bdb_tail, 1, 1, is_ld_reg_tail, is_ld_tail,
                     check_top_vpad, check_bottom_vpad, rows_for_rd_tail,
                     skip_accumulation);
