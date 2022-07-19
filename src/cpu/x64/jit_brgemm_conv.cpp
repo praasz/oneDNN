@@ -81,6 +81,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
         // 1, use_buffer
         // 2, kern_base
         // 3, perform_outwork
+        // 4, group if ic/oc is not multiple of 16
 
         // TODO: when using buffer the stride is not adjacent between 2-16 block.
         if (jcp_.use_buffer && jcp_.oc_block != 16)
@@ -93,6 +94,9 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
         // TODO: oh/od padding are too large
         if (jcp_.t_pad >= jcp_.kh || jcp_.b_pad >= jcp_.kh ||
             jcp_.f_pad >= jcp_.kd || jcp_.back_pad >= jcp_.kd)
+            return status::unimplemented;
+        
+        if (jcp_.ngroups > 1 && (jcp_.oc % 16 != 0 || jcp_.ic % 16 != 0))
             return status::unimplemented;
     }
 
@@ -542,12 +546,12 @@ status_t brgemm_convolution_fwd_t<isa>::init(engine_t *engine) {
     src_w_sz_padding = static_cast<dim_t>(IW) * 16;
     src_h_sz_padding = IH * src_w_sz_padding;
     src_d_sz_padding = ID * src_h_sz_padding;
-    src_c_sz_padding = div_up(jcp.ic, 16) / 16 * src_d_sz_padding;
+    src_c_sz_padding = div_up(jcp.ic, 16) * src_d_sz_padding;
     src_g_sz_padding = jcp.ngroups * src_c_sz_padding;
     dst_w_sz_padding = static_cast<dim_t>(OW) * 16;
     dst_h_sz_padding = OH * dst_w_sz_padding;
     dst_d_sz_padding = OD * dst_h_sz_padding;
-    dst_c_sz_padding = div_up(jcp.oc, 16) / 16 * dst_d_sz_padding;
+    dst_c_sz_padding = div_up(jcp.oc, 16) * dst_d_sz_padding;
     dst_g_sz_padding = jcp.ngroups * dst_c_sz_padding;
 
     const auto src_type = pd()->src_md(0)->data_type;
@@ -821,6 +825,10 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
     DEFINE_ZERO_POINT_VALUE(dst_zero_point, DNNL_ARG_DST);
 
     brgemm_exec_ctx_t brgemm_ctx(ctx, _pd);
+    const memory_desc_wrapper src_d(_pd->src_md());
+    const memory_desc_wrapper dst_d(_pd->dst_md());
+    brgemm_ctx.src += src_d.off_l(0) * jcp.src_dsz;
+    brgemm_ctx.dst += dst_d.off_l(0) * jcp.dst_dsz;
 
     const char *const __restrict src = brgemm_ctx.src;
     const char *const __restrict wei = brgemm_ctx.weights;
@@ -1816,7 +1824,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
                         const auto iw = iiw_b + kw * DW;
                         const auto ptr_A = src_base_kh
                                 + static_cast<ptrdiff_t>(src_dsz) * iw
-                                        * jcp.ngroups * (jcp.use_block_layout ? 16 : jcp.ic_without_padding);
+                                         * (jcp.use_block_layout ? 16 : jcp.ic_without_padding * jcp.ngroups);
                         if (jcp.max_vpad) {
                             icb_batch[k].vvpad.top = kw_top_vpads[kw];
                             icb_batch[k].vvpad.bottom = kw_bottom_vpads[kw];

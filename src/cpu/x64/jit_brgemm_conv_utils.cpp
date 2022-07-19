@@ -56,7 +56,9 @@ inline status_t init_tag(format_tag_t &tag, memory_desc_t &md,
             tag = format_tag::undef;
         }
     } else {
-        tag = mdw.matches_one_of_tag(tag_value);
+        //tag = mdw.matches_one_of_tag(tag_value);
+        tag = mdw.mb_stride_relaxed_match(tag_value);
+
     }
 
     if (tag != tag_value) return status::unimplemented;
@@ -583,7 +585,7 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
                                                : ngroups * ic_without_padding);
     LDB = oc_block;
     if (use_block_layout) {
-        LDA = 16;
+        LDA = 16 * stride_w;
         LDC = 16;
         BLDA = ih * iw * id * 16;
         BLDC = oh * ow * od * 16;
