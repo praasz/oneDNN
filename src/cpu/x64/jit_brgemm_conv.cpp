@@ -76,7 +76,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
     CHECK(brgemm_convolution_utils::init_conf(jcp_, isa, *desc(), src_md_,
             weights_md_, dst_md_, bias_md_, attr_, dnnl_get_max_threads()));
 
-    if (jcp_.use_block_layout) {
+    if (jcp_.use_block_layout || jcp_.dst_use_block_layout) {
         // TODOs:(WA, disable unsupported case)
         // 1, use_buffer
         // 2, kern_base
@@ -245,7 +245,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
                 CHECK(brgemm_desc_init(brg, isa, jcp_.brg_type, src_type,
                         wei_type, false, false, brgemm_row_major, alpha, vbeta,
                         jcp_.LDA, jcp_.LDB, jcp_.LDC, vbrgM, vN, vK,
-                        strides_ptr, jcp_.use_block_layout, jcp_.BLDA, jcp_.BLDC));
+                        strides_ptr, jcp_.use_block_layout, jcp_.BLDA, jcp_.BLDC, jcp_.dst_use_block_layout));
 
                 brgemm_attr_t brgattr;
                 brgattr.use_uker = jcp_.use_uker;
@@ -284,7 +284,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
                 }
                 CHECK(brgemm_desc_set_attr(brg, brgattr));
 
-                auto LDD = jcp_.use_block_layout ? jcp_.LDC : jcp_.oc_without_padding;
+                auto LDD = jcp_.dst_use_block_layout ? jcp_.LDC : jcp_.oc_without_padding;
                 brg->with_sum = with_sum;
                 CHECK(brgemm_desc_set_postops(
                         brg, attr(), &dst_md_, LDD, jcp_.bia_dt));
@@ -1768,7 +1768,7 @@ void brgemm_convolution_fwd_t<isa>::ker_vpad(brgemm_thread_ctx_t &btc) const {
 
     const int ow_b {ow}, ow_e {ow + (is_ow_tail ? jcp.M_tail : jcp.M)};
     iiw_b = ow_b * SW - LP;
-    ptr_D = !jcp.use_block_layout ? dst_base
+    ptr_D = !jcp.dst_use_block_layout ? dst_base
             + dst_dsz
                     * (btc.od * dst_h_sz + btc.oh * dst_w_sz
                             + ow_b * jcp.oc_without_padding) :

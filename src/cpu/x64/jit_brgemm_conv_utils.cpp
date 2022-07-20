@@ -46,7 +46,7 @@ namespace brgemm_convolution_utils {
 
 inline status_t init_tag(format_tag_t &tag, memory_desc_t &md,
         const memory_desc_wrapper &mdw, const format_tag_t tag_value,
-        bool any_eligible) {
+        bool any_eligible, bool relax_match = false) {
 
     if (mdw.format_kind() == format_kind::any) {
         if (any_eligible) {
@@ -56,9 +56,10 @@ inline status_t init_tag(format_tag_t &tag, memory_desc_t &md,
             tag = format_tag::undef;
         }
     } else {
-        //tag = mdw.matches_one_of_tag(tag_value);
-        tag = mdw.mb_stride_relaxed_match(tag_value);
-
+        if (relax_match)
+            tag = mdw.mb_stride_relaxed_match(tag_value);
+        else
+            tag = mdw.matches_one_of_tag(tag_value);
     }
 
     if (tag != tag_value) return status::unimplemented;
@@ -89,9 +90,9 @@ status_t pick_tags(jit_brgemm_conv_conf_t &jcp, memory_desc_t &src_md,
         memory_desc_t &bias_md, bool use_block_layout) {
     format_tag_t src_tag, dst_tag, wei_tag;
     if (use_block_layout)
-        dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+        src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
     else
-        dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
+        src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
 
     const memory_desc_wrapper src_d(&src_md);
     const memory_desc_wrapper weights_d(&weights_md);
@@ -337,12 +338,14 @@ status_t pick_tags(jit_brgemm_conv_conf_t &jcp, memory_desc_t &src_md,
         }
     }
 
-    src_tag = dst_tag;
-
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
-    CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
-    CHECK(init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible));
+    CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible, use_block_layout));
+    if (jcp.dst_use_block_layout)
+        dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+    else
+        dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
+    CHECK(init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible, jcp.dst_use_block_layout));
     CHECK(init_tag(jcp.wei_tag, weights_md, weights_d, wei_tag, true));
 
     return status::success;
@@ -586,8 +589,11 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
     LDB = oc_block;
     if (use_block_layout) {
         LDA = 16 * stride_w;
-        LDC = 16;
         BLDA = ih * iw * id * 16;
+    }
+
+    if (dst_use_block_layout) {
+        LDC = 16;
         BLDC = oh * ow * od * 16;
         BLDD = BLDC;
     } else {
@@ -640,14 +646,14 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
     const float beta = 0.0;
     brgemm_t brg;
     CHECK(brgemm_desc_init(&brg, isa, brgemm_addr, src_dt, wei_dt, false, false,
-            brgemm_row_major, alpha, beta, LDA, LDB, LDC, vM, vN, vK, nullptr, use_block_layout, BLDA, BLDC));
+            brgemm_row_major, alpha, beta, LDA, LDB, LDC, vM, vN, vK, nullptr, use_block_layout, BLDA, BLDC, dst_use_block_layout));
     ur = brg.bd_block * (is_amx(isa) ? brg.bd_block2 : 1);
     ur_block = brg.bd_block;
     if (is_1x1 && is_amx(isa) && M > 0 && M_tail > 0) {
         brgemm_t brg_sp_tail;
         CHECK(brgemm_desc_init(&brg_sp_tail, isa, brgemm_addr, src_dt, wei_dt,
                 false, false, brgemm_row_major, alpha, beta, LDA, LDB, LDC,
-                M_tail, vN, vK, nullptr, use_block_layout, BLDA, BLDC));
+                M_tail, vN, vK, nullptr, use_block_layout, BLDA, BLDC, dst_use_block_layout));
         ur_block_tail = brg_sp_tail.bd_block;
     } else {
         ur_block_tail = 0;
@@ -662,7 +668,7 @@ status_t brg_blocking_t::get_brgemm_ur(
         return status::invalid_arguments;
     CHECK(estimate_brgemm_ur());
 
-    LDD = use_block_layout ? LDC : oc_without_padding;
+    LDD = dst_use_block_layout ? LDC : oc_without_padding;
 
     const float alpha = 1.0;
     const float beta = 1.0;
@@ -693,7 +699,7 @@ status_t brg_blocking_t::get_brgemm_ur(
                             : nullptr;
                     CHECK(brgemm_desc_init(&brg, isa, brg_type, src_dt, wei_dt,
                             false, false, brgemm_row_major, alpha, vbeta, LDA,
-                            LDB, LDC, vM, vN, vK, strides_ptr, use_block_layout, BLDA, BLDC));
+                            LDB, LDC, vM, vN, vK, strides_ptr, use_block_layout, BLDA, BLDC, dst_use_block_layout));
 
                     brgemm_attr_t brgattr;
                     brgattr.max_bs = max_batch;
@@ -1740,14 +1746,22 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     format_tag_t src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
-    if (init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible) != status::success) {
+    if (init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible) != status::success && !jcp.is_1x1) {
         // try block format
         src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
-        CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
+        CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible, true));
         if (jcp.src_dt != data_type::f32) return status::unimplemented;
         jcp.use_block_layout = true;
     }
 
+    format_tag_t dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
+    if (init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible) != status::success && !jcp.is_1x1) {
+        // try block format
+        dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
+        CHECK(init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible, true));
+        if (jcp.dst_dt != data_type::f32) return status::unimplemented;
+        jcp.dst_use_block_layout = true;
+    }
     const auto ic_padded_block = 16 * brg_blocking_t::last_ic_block_size;
     jcp.is_ic_padded = !jcp.is_1x1 && one_of(jcp.wei_dt, bf16, s8)
             && jcp.ic * jcp.kw_sets > ic_padded_block && is_amx(isa);

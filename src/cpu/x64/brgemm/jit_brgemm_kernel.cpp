@@ -349,11 +349,11 @@ int jit_brgemm_kernel_t::B_offset(int ld, int rd, bool is_amx) const noexcept {
             : brg.typesize_B * (rd * brg.LDB + brg.rd_step * ld * brg.ld_block);
 }
 int jit_brgemm_kernel_t::C_offset(int bd, int ld) const noexcept {
-    return !brg.use_block_layout ? brg.typesize_C * (bd * brg.LDC + ld * brg.ld_block) :
+    return !brg.dst_use_block_layout ? brg.typesize_C * (bd * brg.LDC + ld * brg.ld_block) :
            brg.typesize_C * (bd * brg.LDC + ld * brg.BLDC);
 }
 int jit_brgemm_kernel_t::D_offset(int bd, int ld) const noexcept {
-    return !brg.use_block_layout ? brg.typesize_D * (bd * brg.LDD + ld * brg.ld_block) :
+    return !brg.dst_use_block_layout ? brg.typesize_D * (bd * brg.LDD + ld * brg.ld_block) :
            brg.typesize_D * (bd * brg.LDD + ld * brg.BLDD);
 }
 int jit_brgemm_kernel_t::po_offset(int bd, int ld) const noexcept {
@@ -1769,8 +1769,8 @@ void jit_brgemm_kernel_t::bdb_loop() {
         if (brg.ldb_tail > 0) {
             const bool is_ld_reg_tail
                     = (brg.ldb2 == 0 && brg.ldb2_tail == 0) ? false : true;
-            const bool is_ld_tail = brg.use_block_layout ? false : true;
-            if (brg.use_block_layout) {
+            const bool is_ld_tail = brg.dst_use_block_layout ? false : true;
+            if (brg.dst_use_block_layout) {
                 // move pointer to tail block
                 add(reg_aux_C, brg.ldb * brg.typesize_C * (brg.BLDC - brg.ld_block));
                 add(reg_aux_D, brg.ldb * brg.typesize_D * (brg.BLDD - brg.ld_block));

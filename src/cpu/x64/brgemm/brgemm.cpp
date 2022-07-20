@@ -193,7 +193,7 @@ status_t brgemm_blocking(brgemm_t *brg) {
         brg->bdb = brg->bcast_dim / brg->bd_block;
         brg->bdb_tail = brg->bcast_dim % brg->bd_block;
 
-        brg->rd_block = brg->use_block_layout ? 16 : 16 / brg->typesize_A;
+        brg->rd_block = (brg->use_block_layout || brg->dst_use_block_layout) ? 16 : 16 / brg->typesize_A;
         brg->rdb = brg->reduce_dim / brg->rd_block;
         brg->rdb_tail = brg->reduce_dim % brg->rd_block;
 
@@ -400,7 +400,7 @@ status_t brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
         impl::data_type_t dt_b, bool transA, bool transB,
         brgemm_layout_t layout, float alpha, float beta, dim_t LDA, dim_t LDB,
         dim_t LDC, dim_t M, dim_t N, dim_t K, const brgemm_strides_t *strides,
-        bool use_block_layout, dim_t BLDA, dim_t BLDC) {
+        bool use_block_layout, dim_t BLDA, dim_t BLDC, bool dst_use_block_layout) {
     /*
     m - number of rows of the matrix op(A) and number of rows of the matrix C
     n - number of columns of the matrix op(B) and number of columns of the matrix C
@@ -422,7 +422,7 @@ status_t brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
     brg->layout = layout;
     auto is_row_major = [&]() { return brg->layout == brgemm_row_major; };
     if (M <= 0 || N <= 0 || K <= 0) return status::invalid_arguments;
-    if (!use_block_layout) {
+    if (!use_block_layout && !dst_use_block_layout) {
         bool ldx_check = (is_row_major()) ? (LDA < K || LDB < N || LDC < N)
             : (LDA < M || LDB < K || LDC < M);
         if (ldx_check) return status::invalid_arguments;
@@ -518,6 +518,7 @@ status_t brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
         brg->stride_a = brg->stride_b = 0;
     }
     brg->use_block_layout = use_block_layout;
+    brg->dst_use_block_layout = dst_use_block_layout;
     brg->BLDA = static_cast<int>(BLDA);
     brg->BLDC = static_cast<int>(BLDC);
     brg->BLDD = static_cast<int>(BLDC);
@@ -531,7 +532,7 @@ status_t brdgmm_desc_init(brgemm_t *brg, cpu_isa_t isa,
         impl::data_type_t dt_b, bool transA, brgemm_layout_t layout,
         float alpha, float beta, dim_t LDA, dim_t LDC, dim_t M, dim_t N,
         const brgemm_strides_t *strides,
-        bool use_block_layout, dim_t BLDA, dim_t BLDC) {
+        bool use_block_layout, dim_t BLDA, dim_t BLDC, bool dst_use_block_layout) {
 
     if (brg == nullptr) return status::invalid_arguments;
     if (transA || layout != brgemm_row_major || alpha != 1.0f || beta != 0.f)
@@ -585,6 +586,7 @@ status_t brdgmm_desc_init(brgemm_t *brg, cpu_isa_t isa,
     const int max_acc_zmms = 32 - 2 /*zmma, zmmb, post-ops, saturation*/
             - requires_permute_dst_zmm;
     brg->use_block_layout = use_block_layout;
+    brg->dst_use_block_layout = dst_use_block_layout;
     brg->BLDA = static_cast<int>(BLDA);
     brg->BLDC = static_cast<int>(BLDC);
     brg->BLDD = static_cast<int>(BLDC);

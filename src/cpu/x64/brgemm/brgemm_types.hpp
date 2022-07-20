@@ -184,6 +184,7 @@ struct brgemm_t {
     bool with_comp_pads = false;
     bool req_s8s8_compensation = false;
     bool use_block_layout = false;
+    bool dst_use_block_layout = false;
     int BLDA = 0;
     int BLDC = 0;
     int BLDD = 0;

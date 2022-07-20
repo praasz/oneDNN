@@ -948,6 +948,7 @@ struct jit_brgemm_conv_conf_t {
     bool comp_with_vpads;
 
     bool use_block_layout;
+    bool dst_use_block_layout;
     int BLDA, BLDC, BLDD;
 };
 
