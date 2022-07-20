@@ -98,10 +98,10 @@ private:
                       pd->attr()->post_ops_, ctx))
             , wsp_tile(ctx.get_scratchpad_grantor().template get<char>(
                       memory_tracking::names::key_conv_amx_tile_buffer)) {}
-        const char *const __restrict src;
+        const char * __restrict src;
         const char *const __restrict weights;
         const char *const __restrict bias;
-        char *const __restrict dst;
+        char * __restrict dst;
         const std::vector<const void *> post_ops_binary_rhs_arg_vec;
         char *const wsp_tile;
     };
@@ -147,6 +147,9 @@ private:
     size_t bia_dsz, acc_dsz, src_dsz, wei_dsz;
     bool need_postwork;
     int ic_chunks;
+
+    dim_t src_w_sz_padding, src_h_sz_padding, src_d_sz_padding, src_c_sz_padding, src_g_sz_padding;
+    dim_t dst_w_sz_padding, dst_h_sz_padding, dst_d_sz_padding, dst_c_sz_padding, dst_g_sz_padding;
     // const variables used for address calculations
     dim_t src_w_sz, src_h_sz, src_d_sz, dst_w_sz, dst_h_sz, dst_d_sz, wei_oc_sz,
             wei_ic_sz, wei_ocb_sz;

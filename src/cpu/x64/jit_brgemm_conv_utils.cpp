@@ -573,7 +573,6 @@ void brg_blocking_t::select_ic_block() {
         ic_block = nstl::min(
                 (exec_type == exec_trans) ? rnd_up(ic, padded_ic) : ic,
                 simd_blocks * simd_w);
-        //ic_block = use_block_layout ? 16 : ic_block;
     }
     nb_ic = utils::div_up(ic, ic_block);
 }
@@ -1746,7 +1745,7 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     format_tag_t src_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
-    if (init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible) != status::success && !jcp.is_1x1) {
+    if (init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible) != status::success) {
         // try block format
         src_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
         CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible, true));
@@ -1755,7 +1754,7 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     }
 
     format_tag_t dst_tag = pick(jcp.ndims - 3, nwc, nhwc, ndhwc);
-    if (init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible) != status::success && !jcp.is_1x1) {
+    if (init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible) != status::success) {
         // try block format
         dst_tag = pick(jcp.ndims - 3, nCw16c, nChw16c, nCdhw16c);
         CHECK(init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible, true));
@@ -2155,7 +2154,7 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.use_uker = is_amx(isa);
     if (jcp.use_uker)
         jcp.hint_prefetching = brgemm_kernel_prefetching_t::brgemm_prf_output1;
-    CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md, false));
+    CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md, jcp.use_block_layout));
     CHECK(attr.set_default_formats(&dst_md));
 
     const auto &oscales = attr.output_scales_;

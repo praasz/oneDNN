@@ -74,6 +74,30 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
     CHECK(brgemm_convolution_utils::init_1x1_conf(jcp_, isa, *desc(), src_md_,
             weights_md_, dst_md_, bias_md_, attr_, dnnl_get_max_threads()));
 
+    if (jcp_.use_block_layout || jcp_.dst_use_block_layout) {
+        // TODOs:(WA, disable unsupported case)
+        // 1, use_buffer
+        // 2, kern_base
+        // 3, perform_outwork
+        // 4, group if ic/oc is not multiple of 16
+
+        // TODO: when using buffer the stride is not adjacent between 2-16 block.
+        if (jcp_.use_buffer && jcp_.oc_block != 16)
+            return status::unimplemented;
+        
+        // TODO: rtus
+        if (jcp_.exec_type != exec_base)
+            return status::unimplemented;
+
+        // TODO: oh/od padding are too large
+        if (jcp_.t_pad >= jcp_.kh || jcp_.b_pad >= jcp_.kh ||
+            jcp_.f_pad >= jcp_.kd || jcp_.back_pad >= jcp_.kd)
+            return status::unimplemented;
+        
+        if (jcp_.ngroups > 1 && (jcp_.oc % 16 != 0 || jcp_.ic % 16 != 0))
+            return status::unimplemented;
+    }
+
     for (int i = 0; i < 16; i++)
         brgs_[i].bcast_dim = brgs_[i].load_dim = brgs_[i].reduce_dim = 0;
 
@@ -101,7 +125,7 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
                 = (jcp_.brg_type == brgemm_strd) ? &brg_strides : nullptr;
         CHECK(brgemm_desc_init(&brg, isa, jcp_.brg_type, src_type, wei_type,
                 false, false, brgemm_row_major, alpha, vbeta, jcp_.LDA,
-                jcp_.LDB, jcp_.LDC, vM, vN, vK, strides_ptr));
+                jcp_.LDB, jcp_.LDC, vM, vN, vK, strides_ptr, jcp_.use_block_layout, jcp_.BLDA, jcp_.BLDC, jcp_.dst_use_block_layout));
 
         brgemm_attr_t brgattr;
         brgattr.max_bs = jcp_.gemm_batch_size;
@@ -116,7 +140,7 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
         brgattr.use_interleave_stores = brgattr.use_uker;
         brgattr.hint_prefetching = jcp_.hint_prefetching;
         CHECK(brgemm_desc_set_attr(&brg, brgattr));
-        auto LDD = jcp_.oc_without_padding;
+        auto LDD = jcp_.dst_use_block_layout ? jcp_.LDC : jcp_.oc_without_padding;
         brg.with_sum = with_sum;
         CHECK(brgemm_desc_set_postops(
                 &brg, attr(), &dst_md_, LDD, jcp_.bia_dt));
@@ -161,6 +185,17 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::init(engine_t *engine) {
     dst_w_sz = (dim_t)OW * jcp.oc_without_padding;
     dst_h_sz = OH * dst_w_sz;
     dst_d_sz = OD * dst_h_sz;
+
+    src_w_sz_padding = static_cast<dim_t>(IW) * 16;
+    src_h_sz_padding = IH * src_w_sz_padding;
+    src_d_sz_padding = ID * src_h_sz_padding;
+    src_c_sz_padding = div_up(jcp.ic, 16) * src_d_sz_padding;
+    src_g_sz_padding = jcp.ngroups * src_c_sz_padding;
+    dst_w_sz_padding = static_cast<dim_t>(OW) * 16;
+    dst_h_sz_padding = OH * dst_w_sz_padding;
+    dst_d_sz_padding = OD * dst_h_sz_padding;
+    dst_c_sz_padding = div_up(jcp.oc, 16) * dst_d_sz_padding;
+    dst_g_sz_padding = jcp.ngroups * dst_c_sz_padding;
 
     const auto src_type = pd()->src_md(0)->data_type;
     const auto wei_type = pd()->weights_md(0)->data_type;
@@ -312,10 +347,11 @@ void brgemm_1x1_convolution_fwd_t<isa>::exec_ker(
     const size_t wei_dt_size = types::data_type_size(weights_d.data_type());
     const size_t dst_dt_size = types::data_type_size(dst_d.data_type());
 
-    const char *const __restrict src = brgemm_ctx.src;
+    const char *const __restrict src = brgemm_ctx.src + src_d.off_l(0) * src_dt_size;
     const char *const __restrict weights = brgemm_ctx.weights;
     const char *const __restrict bias = brgemm_ctx.bias;
-    char *const __restrict dst = brgemm_ctx.dst;
+    char *const __restrict dst = brgemm_ctx.dst + dst_d.off_l(0) * dst_dt_size;
+
     const std::vector<const void *> &post_ops_binary_rhs_arg_vec
             = brgemm_ctx.post_ops_binary_rhs_arg_vec;
 
@@ -349,17 +385,25 @@ void brgemm_1x1_convolution_fwd_t<isa>::exec_ker(
     const bool is_ic_tail
             = (icc == ic_chunks - 1 && ((jcp.ic - ic) % jcp.ic_block != 0));
 
-    const auto src_offset = n * src_d_sz + id * src_h_sz + ih * src_w_sz
-            + iw * jcp.ngroups * jcp.ic_without_padding + g_ic;
+    const auto src_offset = !jcp.use_block_layout ? n * src_d_sz + id * src_h_sz + ih * src_w_sz
+            + iw * jcp.ngroups * jcp.ic_without_padding + g_ic :
+            n * src_g_sz_padding + g * src_c_sz_padding + (ic / 16) * src_d_sz_padding + id * src_h_sz_padding +
+                ih * src_w_sz_padding + iw * 16;
     const auto src_base
             = jcp.is_rtus ? inp_buffer : src + src_dt_size * src_offset;
     const auto wei_offset = jcp.wei_plain ? g * wei_ic_sz + ocb * wei_ocb_sz
                                           : g * wei_ocb_sz + ocb * wei_ic_sz;
     const auto wei_base = weights + wei_dt_size * wei_offset;
-    const auto ptr_D = dst
+    const auto ptr_D = !jcp.dst_use_block_layout ? dst
             + dst_dt_size
                     * (n * dst_d_sz + od * dst_h_sz + oh * dst_w_sz
-                            + ow * jcp.oc_without_padding + g_oc);
+                            + ow * jcp.oc_without_padding + g_oc) :
+                            dst
+            + dst_dt_size
+                    * (n * dst_g_sz_padding + g * dst_c_sz_padding + 
+                       ocb * jcp.oc_block  / 16 * dst_d_sz_padding + od * dst_h_sz_padding +
+                       oh * dst_w_sz_padding +
+                       ow * 16);
     char *const ptr_C = (jcp.use_buffer) ? c_buffer : (char *)ptr_D;
 
     const auto bias_w
@@ -381,6 +425,10 @@ void brgemm_1x1_convolution_fwd_t<isa>::exec_ker(
             const auto ic_off = (ic_block_s + k) * jcp.ic_block;
             const auto src_ic = ic_off;
             const auto wei_ic = ic + ic_off;
+            // const auto ptr_A = src_base_kh
+            //         + static_cast<ptrdiff_t>(src_dsz) * iw
+            //                         * (jcp.use_block_layout ? 16 : jcp.ic_without_padding * jcp.ngroups);
+
             const auto ptr_A = src_base + src_dt_size * src_ic;
             const auto ptr_B = wei_base + wei_dt_size * wei_ic * wei_oc_sz;
             brg_batch[k].ptr.A = ptr_A;
