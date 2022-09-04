@@ -116,6 +116,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                 if (are_post_ops_applicable && jbgp_.nthr_ic_b > 1) {
                     brgemm_attr_t brgattr;
                     brgattr.generate_skip_accumulation = true;
+                    brgattr.prefetch_A = src_dt == f32;
                     CHECK(brgemm_desc_set_attr(&brg, brgattr));
                 }
                 if (isa == avx512_core_bf16_amx_int8

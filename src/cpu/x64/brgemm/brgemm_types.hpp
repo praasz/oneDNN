@@ -84,6 +84,8 @@ struct DNNL_API brgemm_attr_t {
     brgemm_kernel_loop_order_t hint_loop_order;
     brgemm_kernel_prefetching_t hint_prefetching
             = brgemm_kernel_prefetching_t::brgemm_prf_default;
+    bool prefetch_A = false;
+
     bool wary_tail_read;
     bool generate_skip_accumulation;
     // bd_mask is char array in which each element is a boolean value that

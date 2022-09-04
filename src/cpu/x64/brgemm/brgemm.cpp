@@ -193,7 +193,9 @@ status_t brgemm_blocking(brgemm_t *brg) {
         brg->bdb = brg->bcast_dim / brg->bd_block;
         brg->bdb_tail = brg->bcast_dim % brg->bd_block;
 
-        brg->rd_block = 16 / brg->typesize_A;
+        auto p = std::getenv("USE_BRG");
+        brg->rd_block = p && p[0] == '1' ? 16 : 16 / brg->typesize_A;
+        brg->rd_block = 16 / brg->typesize_A;        
         brg->rdb = brg->reduce_dim / brg->rd_block;
         brg->rdb_tail = brg->reduce_dim % brg->rd_block;
 

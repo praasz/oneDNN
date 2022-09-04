@@ -138,6 +138,7 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
                     = brgemm_kernel_prefetching_t::brgemm_prf_output1;
         }
 
+        brgattr.prefetch_A = is_f32;
         CHECK(brgemm_desc_set_attr(&brg, brgattr));
     }
 
