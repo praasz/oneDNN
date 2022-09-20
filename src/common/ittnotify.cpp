@@ -83,6 +83,7 @@ void primitive_task_start(primitive_kind_t kind) {
             CASE(softmax_v2),
             CASE(depthwise),
             CASE(quantization),
+            CASE(binarization),
     };
 #undef CASE
     int kind_idx = (int)kind;
