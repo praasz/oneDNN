@@ -1297,6 +1297,20 @@ public:
         vcmpps(x1, x2, op, cmp_predicate);
     }
 
+    void uni_vpcmpgtd(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+            const Xbyak::Operand &op) {
+        if (is_valid_isa(avx))
+            vpcmpgtd(x1, x2, op);
+        else {
+            if (x1.getIdx() != x2.getIdx()) uni_vmovups(x1, x2);
+            pcmpgtd(x1, op);
+        }
+    }
+    void uni_vpcmpgtd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+            const Xbyak::Operand &op) {
+        vpcmpgtd(x1, x2, op);
+    }
+
     void uni_cmpneqps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op) {
         if (is_valid_isa(avx))
