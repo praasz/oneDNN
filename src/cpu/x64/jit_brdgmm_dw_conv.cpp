@@ -120,7 +120,7 @@ status_t brdgmm_dw_convolution_fwd_t::pd_t::init(engine_t *engine) {
                     one_of(bia_type, data_type::undef, f32, s32, s8, u8))
             && IMPLICATION(!is_int8,
                     one_of(bia_type, data_type::undef, src_type, dst_type))
-            && attr()->has_default_values(skip_mask) && !has_zero_dim_memory();
+            && attr()->has_default_values(skip_mask, dst_type) && !has_zero_dim_memory();
     if (!ok) return status::unimplemented;
 
     auto &jcp = jcp_;
