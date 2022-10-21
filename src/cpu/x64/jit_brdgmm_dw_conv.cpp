@@ -99,7 +99,7 @@ status_t brdgmm_dw_convolution_fwd_t::pd_t::init(engine_t *engine) {
                             || (one_of(src_type, bf16)
                                     && one_of(bia_type, f32, bf16))
                             || everyone_is(f32, src_type, bia_type)))
-            && attr()->has_default_values(skip_mask) && !has_zero_dim_memory();
+            && attr()->has_default_values(skip_mask, dst_type) && !has_zero_dim_memory();
     if (!ok) return status::unimplemented;
 
     auto &jcp = jcp_;
