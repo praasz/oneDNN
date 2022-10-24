@@ -418,6 +418,12 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::compute_loop(
     push(reg_ch_blocks);
     base_post_ops_data_offset += reg64_size;
 
+    if (jcp.with_depthwise) {
+        mov(reg_d_bias, ptr[this->param1 + GET_OFF(oc_off)]);
+        push(reg_d_bias);
+        base_post_ops_data_offset += reg64_size;
+    }
+
     if (ch_loop) {
         Label ch_loop_label, ch_tail_label, skip_ch_tail_label;
         const int nb_ch = jcp.oc / jcp.ch_block;
@@ -447,6 +453,12 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::compute_loop(
                 add(reg_input, inp_ch_stride);
                 add(reg_output, out_ch_stride);
                 if (jcp.with_bias) add(reg_bias, bias_stride);
+                if (jcp.with_depthwise) {
+                    mov(reg_d_bias, ptr[this->param1 + GET_OFF(oc_off)]);
+                    add(reg_d_bias,
+                            jcp.nb_ch_blocking * jcp.ch_block * sizeof(float));
+                    mov(ptr[this->param1 + GET_OFF(oc_off)], reg_d_bias);
+                }
                 sub(reg_ch_blocks, ch_step);
                 cmp(reg_ch_blocks, ch_step);
                 jge(ch_loop_label, T_NEAR);
@@ -471,6 +483,12 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::compute_loop(
 
     } else {
         compute(ur_ch_blocks, masked_ch_block_tail);
+    }
+
+    if (jcp.with_depthwise) {
+        pop(reg_d_bias);
+        mov(ptr[this->param1 + GET_OFF(oc_off)], reg_d_bias);
+        base_post_ops_data_offset -= reg64_size;
     }
 
     pop(reg_ch_blocks);
