@@ -85,7 +85,7 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator {
             static constexpr size_t tail_size = 0;
             static constexpr bool use_exact_tail_scalar_bcast = false;
             const binary_injector::rhs_arg_static_params_t rhs_sp {
-                helper_vmm_idx, r13, r14, preserve_gpr,
+                helper_vmm_idx, r13, r14, r15, preserve_gpr,
                 preserve_vmm, PARAM_OFF(post_ops_binary_rhs_arg_vec),
                 PARAM_OFF(dst_orig), memory_desc_wrapper(pd->dst_md()),
                 tail_size, kreg_rem_mask_short, use_exact_tail_scalar_bcast};

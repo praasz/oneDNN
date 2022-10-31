@@ -341,6 +341,7 @@ private:
 
     const Xbyak::Reg64 bin_injector_helper_reg_1 = r14;
     const Xbyak::Reg64 bin_injector_helper_reg_2 = r15;
+    const Xbyak::Reg64 bin_injector_helper_reg_3 = r11;
 
     const Xbyak::Reg64 reg_d_weights = reg_zp_compensation;
     const Xbyak::Reg64 reg_d_bias = reg_src_zero_point;
