@@ -528,22 +528,6 @@ binary_kernel_t *create_binary_kernel(
     const auto blk_size = src0_d.blocking_desc().inner_blks[0];
     const auto is_plain_layout = src0_d.is_plain();
     switch (conf.isa) {
-        case avx512_core_fp16: {
-            if (blk_size == 16 || is_plain_layout) {
-                using kernel_t
-                        = jit_uni_binary_kernel_t<avx512_core_fp16, Xbyak::Zmm>;
-                return new kernel_t(pd, conf, tail_kernel);
-            } else if (blk_size == 8) {
-                using kernel_t
-                        = jit_uni_binary_kernel_t<avx512_core_fp16, Xbyak::Ymm>;
-                return new kernel_t(pd, conf, tail_kernel);
-            } else if (blk_size == 4) {
-                using kernel_t
-                        = jit_uni_binary_kernel_t<avx512_core_fp16, Xbyak::Xmm>;
-                return new kernel_t(pd, conf, tail_kernel);
-            }
-            break;
-        }
         case avx512_core_bf16: {
             if (blk_size == 16 || is_plain_layout) {
                 if (conf.is_i8) {
