@@ -119,7 +119,7 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
         brgattr.hint_prefetching = jcp_.hint_prefetching;
         brgattr.fpmath_mode = attr()->fpmath_mode_;
         CHECK(brgemm_desc_set_attr(&brg, brgattr));
-        auto LDD = jcp_.oc_without_padding;
+        auto LDD = jcp_.LDD;
         brg.with_sum = with_sum;
         CHECK(brgemm_desc_set_postops(
                 &brg, attr(), &dst_md_, LDD, jcp_.bia_dt));
@@ -164,7 +164,7 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::init(engine_t *engine) {
     src_w_sz = (dim_t)IW * jcp.ngroups * jcp.ic_without_padding;
     src_h_sz = IH * src_w_sz;
     src_d_sz = ID * src_h_sz;
-    dst_w_sz = (dim_t)OW * jcp.oc_without_padding;
+    dst_w_sz = (dim_t)OW * jcp.LDD;
     dst_h_sz = OH * dst_w_sz;
     dst_d_sz = OD * dst_h_sz;
 
@@ -362,8 +362,8 @@ void brgemm_1x1_convolution_fwd_t<isa>::exec_ker(
     const auto wei_base = weights + wei_dt_size * wei_offset;
     const auto ptr_D = dst
             + dst_dt_size
-                    * (n * dst_d_sz + od * dst_h_sz + oh * dst_w_sz
-                            + ow * jcp.oc_without_padding + g_oc);
+                    * (dst_d.offset0() + n * dst_d_sz + od * dst_h_sz + oh * dst_w_sz
+                            + ow * jcp.LDD + g_oc);
     char *const ptr_C = (jcp.use_buffer) ? c_buffer : (char *)ptr_D;
 
     const auto bias_w

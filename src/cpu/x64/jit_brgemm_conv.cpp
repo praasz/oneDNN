@@ -259,7 +259,7 @@ status_t brgemm_convolution_fwd_t<isa, use_inversion>::pd_t::init(
                 brgattr.fpmath_mode = attr()->fpmath_mode_;
                 CHECK(brgemm_desc_set_attr(brg, brgattr));
 
-                auto LDD = jcp_.oc_without_padding;
+                auto LDD = jcp_.LDD;
                 brg->with_sum = with_sum;
                 CHECK(brgemm_desc_set_postops(
                         brg, attr(), &dst_md_, LDD, jcp_.bia_dt));
@@ -517,7 +517,7 @@ status_t brgemm_convolution_fwd_t<isa, use_inversion>::init(engine_t *engine) {
     src_w_sz = static_cast<dim_t>(IW) * jcp.ngroups * jcp.ic_without_padding;
     src_h_sz = IH * src_w_sz;
     src_d_sz = ID * src_h_sz;
-    dst_w_sz = static_cast<dim_t>(OW) * jcp.oc_without_padding;
+    dst_w_sz = static_cast<dim_t>(OW) * jcp.LDD;
     dst_h_sz = OH * dst_w_sz;
     dst_d_sz = OD * dst_h_sz;
 
@@ -1137,8 +1137,8 @@ void brgemm_convolution_fwd_t<isa, use_inversion>::perform_outwork(
 
             p.ptr_out = dst_base
                     + dst_dsz
-                            * (od * dst_h_sz + oh * dst_w_sz
-                                    + ow_pw_s * jcp.oc_without_padding);
+                            * (_pd->dst_md()->offset0 + od * dst_h_sz + oh * dst_w_sz
+                                    + ow_pw_s * jcp.LDD);
             p.ptr_in = static_cast<void *>(jcp.use_buffer
                             ? (c_buffer + acc_dsz * (ow_pw_s - ow) * jcp.LDC)
                             : p.ptr_out);
@@ -1148,8 +1148,8 @@ void brgemm_convolution_fwd_t<isa, use_inversion>::perform_outwork(
                     ? (c_buffer + acc_dsz * (ow_pw_s - ow) * jcp.LDC)
                     : dst_base
                             + dst_dsz
-                                    * (od * dst_h_sz + oh * dst_w_sz
-                                            + ow_pw_s * jcp.oc_without_padding);
+                                    * (_pd->dst_md()->offset0 + od * dst_h_sz + oh * dst_w_sz
+                                            + ow_pw_s * jcp.LDD);
             p.ptr_out = static_cast<void *>(ptr_Cz);
         }
         (*outwork_ker)(&p);
@@ -1488,8 +1488,8 @@ void brgemm_convolution_fwd_t<isa, use_inversion>::ker_base(
         iiw_b = ow_b * SW - LP;
         ptr_D = dst_base
                 + dst_dsz
-                        * (btc.od * dst_h_sz + btc.oh * dst_w_sz
-                                + ow_b * jcp.oc_without_padding);
+                        * (_pd->dst_md()->offset0 + btc.od * dst_h_sz + btc.oh * dst_w_sz
+                                + ow_b * jcp.LDD);
         ptr_C = (jcp.use_buffer)
                 ? btc.c_buffer + acc_dsz * (ow_b - ow) * jcp.LDC
                 : static_cast<char *>(ptr_D);
@@ -1617,8 +1617,8 @@ void brgemm_convolution_fwd_t<isa, use_inversion>::ker_trans(
     iiw_b = ow_b * SW - LP;
     ptr_D = dst_base
             + dst_dsz
-                    * (btc.od * dst_h_sz + btc.oh * dst_w_sz
-                            + ow_b * jcp.oc_without_padding);
+                    * (_pd->dst_md()->offset0 + btc.od * dst_h_sz + btc.oh * dst_w_sz
+                            + ow_b * jcp.LDD);
     ptr_C = (jcp.use_buffer) ? btc.c_buffer + acc_dsz * (ow_b - ow) * jcp.LDC
                              : static_cast<char *>(ptr_D);
 
@@ -1771,8 +1771,8 @@ void brgemm_convolution_fwd_t<isa, use_inversion>::ker_vpad(
     iiw_b = ow_b * SW - LP;
     ptr_D = dst_base
             + dst_dsz
-                    * (btc.od * dst_h_sz + btc.oh * dst_w_sz
-                            + ow_b * jcp.oc_without_padding);
+                    * (_pd->dst_md()->offset0 + btc.od * dst_h_sz + btc.oh * dst_w_sz
+                            + ow_b * jcp.LDD);
     ptr_C = (jcp.use_buffer) ? btc.c_buffer + acc_dsz * (ow_b - ow) * jcp.LDC
                              : static_cast<char *>(ptr_D);
 

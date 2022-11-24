@@ -350,7 +350,25 @@ status_t pick_tags(jit_brgemm_conv_conf_t &jcp, memory_desc_t &src_md,
     const bool any_eligible = (jcp.prop_kind == prop_kind::forward_inference
             || jcp.wei_dt == data_type::s8 || is_amx(jcp.isa));
     CHECK(init_tag(jcp.src_tag, src_md, src_d, src_tag, any_eligible));
-    CHECK(init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible));
+    auto ret = init_tag(jcp.dst_tag, dst_md, dst_d, dst_tag, any_eligible);
+    if (ret != status::success) {
+        // only support stride of channel dimension
+        const auto &strides = dst_md.format_desc.blocking.strides;
+        auto cur_stride = strides[dst_md.ndims - 1];
+        bool only_c_stride = true;
+        for (auto i = dst_md.ndims - 2; i >= 1; i--) {
+            cur_stride *= dst_md.dims[i + 1];
+            if (cur_stride != strides[i == 1 ? 0 : i]) {
+                only_c_stride = false;
+                break;
+            }
+        }
+        if (only_c_stride && memory_desc_matches_tag(dst_md, dst_tag, strides)) {
+            jcp.dst_tag = dst_tag;
+        } else {
+            return ret;
+        }
+    }
     CHECK(init_tag(jcp.wei_tag, weights_md, weights_d, wei_tag, true));
 
     return status::success;
@@ -605,7 +623,7 @@ status_t brg_blocking_t::estimate_brgemm_ur() {
                     * (exec_type == exec_trans ? ic_block
                                                : ngroups * ic_without_padding);
     LDB = oc_block;
-    LDC = use_buffer ? oc_block : oc_without_padding;
+    LDC = use_buffer ? oc_block : LDC;
 
     // Configure matrix sizes
     // for amx if ic_block != ic then we use exec_trans so K is ic_block
@@ -678,8 +696,6 @@ status_t brg_blocking_t::get_brgemm_ur(
     if (sp_block <= 0 || ic_block <= 0 || oc_block <= 0)
         return status::invalid_arguments;
     CHECK(estimate_brgemm_ur());
-
-    LDD = oc_without_padding;
 
     const float alpha = 1.0;
     const float beta = 1.0;
@@ -1838,6 +1854,12 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
 
     const bool with_groups = weights_d.ndims() == src_d.ndims() + 1;
 
+    if (dst_d.format_kind() == format_kind::any) {
+        jcp.LDC = jcp.LDD = jcp.oc_without_padding;
+    } else {
+        jcp.LDC = jcp.LDD = dst_md.format_desc.blocking.strides[dst_md.ndims - 1];
+    }
+
     // TODO: check these restrictions
     if (is_amx(isa)) {
         // disabled for two convolutions from ssd_resnet34
@@ -2169,6 +2191,11 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.max_vpad = 0;
 
     jcp.wei_plain = false;
+    if (dst_d.format_kind() == format_kind::any) {
+        jcp.LDC = jcp.LDD = jcp.oc_without_padding;
+    } else {
+        jcp.LDC = jcp.LDD = dst_md.format_desc.blocking.strides[dst_md.ndims - 1];
+    }
 
     brg_blocking_t best_brgb = zero<decltype(best_brgb)>();
     best_brgb.oc_block = min_oc_block;
