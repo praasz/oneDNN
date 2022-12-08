@@ -497,6 +497,8 @@ void init_brdgmm_conf(brgemm_t *brg, brgemm_batch_kind_t type,
     brg->typesize_C = types::data_type_size(brg->dt_c);
     brg->typesize_D = types::data_type_size(brg->dt_d);
 
+    set_isa_impl(brg);
+
     brg->is_bf16_tmm = brg->is_bf16 && mayiuse(avx512_core_bf16_amx_bf16);
     brg->is_dgmm = true;
 
