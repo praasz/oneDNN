@@ -1467,9 +1467,6 @@ dnnl_status_t DNNL_API dnnl_memory_get_data_handle(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_memory_set_data_handle(
         dnnl_memory_t memory, void *handle);
-
-dnnl_status_t DNNL_API dnnl_memory_set_data_handle_no_pads_proc(
-        dnnl_memory_t memory, void *handle);
         
 // TODO: add documentation and put these in the right place.
 dnnl_status_t DNNL_API dnnl_memory_get_data_handles(
@@ -1487,9 +1484,6 @@ dnnl_status_t DNNL_API dnnl_memory_set_data_handles(
 /// @returns #dnnl_success on success and a status describing the error
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_memory_set_data_handle_v2(
-        dnnl_memory_t memory, void *handle, dnnl_stream_t stream);
-
-dnnl_status_t DNNL_API dnnl_memory_set_data_handle_v2_no_pads_proc(
         dnnl_memory_t memory, void *handle, dnnl_stream_t stream);
 
 /// Destroys a memory object.
