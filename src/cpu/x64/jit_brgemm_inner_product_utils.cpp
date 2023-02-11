@@ -40,6 +40,19 @@ int work_1d(int nthrs, int nthr_k, int n_chunks, int n_reduction_blocks) {
     return rd_work * div_up(n_chunks, nthr_other);
 }
 
+// Returns the max divisor of n in range [d_min, d_max].
+int max_divisor(int n, int d_min, int d_max) {
+    if (n == 0) return 0;
+    if (n < 0) n = -n;
+    if (d_max <= 0) d_max = n;
+    if (d_min <= 0) d_min = 1;
+    if (d_max < d_min) nstl::swap(d_max, d_min);
+
+    for (int d = d_max; d >= d_min; d--)
+        if (n % d == 0) return d;
+    return d_min;
+}
+
 int get_brg_kernel_index(const jit_brgemm_primitive_conf_t &jbgp,
         bool is_bs_tail, bool do_initialization, bool is_M_tail, bool is_N_tail,
         bool is_K_tail) {
@@ -114,13 +127,8 @@ int get_os_block(const jit_brgemm_primitive_conf_t &jbgp, bool try_to_adjust,
 
     if (is_adjustment) max_os_block /= 2;
     int os_block = 1;
-    for (int osb = max_os_block; osb >= min_os_block; osb--) {
-        if (osb == 0) break;
-        if (jbgp.os % osb == 0) {
-            os_block = osb;
-            break;
-        }
-    }
+    if (min_os_block > 0 && max_os_block > 0)
+        os_block = max_divisor(jbgp.os, min_os_block, max_os_block);
     if (os_block == 1) os_block = nstl::min(jbgp.os, max_os_block);
 
     // Use large os-block to reduce bandwidth requirement.
@@ -555,11 +563,7 @@ status_t init_ip_conf_bwd_d(jit_brgemm_primitive_conf_t &jbgp) {
     jbgp.nb_os = div_up(jbgp.os, jbgp.os_block);
     jbgp.nb_os_blocking = 1;
     int os_blocking_max = 2;
-    for (int bl = os_blocking_max; bl >= 1; bl--)
-        if (jbgp.nb_os % bl == 0) {
-            jbgp.nb_os_blocking = bl;
-            break;
-        }
+    jbgp.nb_os_blocking = max_divisor(jbgp.nb_os, 1, os_blocking_max);
 
     if (is_amx_bf16 || jbgp.is_bf32) {
         const int os_chunks = div_up(jbgp.nb_os, jbgp.nb_os_blocking);
@@ -574,11 +578,7 @@ status_t init_ip_conf_bwd_d(jit_brgemm_primitive_conf_t &jbgp) {
 
     jbgp.nb_oc_blocking = 1;
     const int oc_chunk_max_size = 64;
-    for (int bl = oc_chunk_max_size; bl >= 1; bl--)
-        if (jbgp.nb_oc % bl == 0) {
-            jbgp.nb_oc_blocking = bl;
-            break;
-        }
+    jbgp.nb_oc_blocking = max_divisor(jbgp.nb_oc, 1, oc_chunk_max_size);
 
     jbgp.nthr_oc_b = 1;
     const int ic_chunks = div_up(jbgp.nb_ic, jbgp.nb_ic_blocking);
@@ -827,11 +827,7 @@ void thread_balance(const jit_brgemm_primitive_conf_t &j, int &nb_os_blocking_,
         if (os_chunks < nthr_mb) {
             int coef = saturate(1, 4, 2 * j.mb / (j.oc + j.ic));
             int os_blocking_max = div_up(div_up(j.nb_os, coef), nthr_mb);
-            for (int bl = os_blocking_max; bl >= 1; bl--)
-                if (j.nb_os % bl == 0) {
-                    nb_os_blocking = bl;
-                    break;
-                }
+            nb_os_blocking = max_divisor(j.nb_os, 1, os_blocking_max);
         }
 
         const int nthr_par = nthr / nthr_mb;
@@ -910,12 +906,7 @@ status_t init_ip_conf_bwd_w(jit_brgemm_primitive_conf_t &jbgp) {
                     ? 8
                     : 4
             : nstl::min(64, jbgp.nb_os);
-
-    for (int bl = os_blocking_max; bl >= 1; bl--)
-        if (jbgp.nb_os % bl == 0) {
-            jbgp.nb_os_blocking = bl;
-            break;
-        }
+    jbgp.nb_os_blocking = max_divisor(jbgp.nb_os, 1, os_blocking_max);
 
     jbgp.use_buffer_a = true;
     const bool is_oc_big_2_pow = jbgp.oc >= 512 && math::is_pow2(jbgp.oc);
