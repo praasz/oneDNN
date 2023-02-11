@@ -331,6 +331,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             osc_occ_icc_osb_ocb,
             osc_occ_osb_ocb_icc,
             icc_osc_occ_osb_ocb,
+            icc_occ_osc_ocb_osb,
         };
         enum loop_order order = osc_occ_osb_ocb_icc;
 
@@ -343,6 +344,35 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             // Use icc loop as outer-most to save bandwidth when os is small.
             if (jbgp.use_small_os_kernels) order = icc_osc_occ_osb_ocb;
         }
+
+        const int os_chunk_sz = jbgp.os_block * jbgp.nb_os_blocking;
+        const int oc_chunk_sz = jbgp.oc_block * jbgp.nb_oc_blocking;
+        const int ic_chunk_sz = jbgp.ic_block * jbgp.nb_ic_blocking;
+        const int n_blocks = div_up(work_amount, nthr_oc_mb);
+        const int n_ic_blocks = div_up(icc_work, nthr_ic);
+
+        int oc_span_osc_occ = min(n_blocks, oc_chunks) * oc_chunk_sz;
+        int os_span_osc_occ = div_up(n_blocks, oc_chunks) * os_chunk_sz;
+        oc_span_osc_occ = min(oc_span_osc_occ, jbgp.oc);
+        os_span_osc_occ = min(os_span_osc_occ, jbgp.os);
+
+        int os_span_occ_osc = min(n_blocks, os_chunks) * os_chunk_sz;
+        int oc_span_occ_osc = div_up(n_blocks, os_chunks) * oc_chunk_sz;
+        os_span_occ_osc = min(os_span_occ_osc, jbgp.os);
+        oc_span_occ_osc = min(oc_span_occ_osc, jbgp.oc);
+
+        int k_span = min(n_ic_blocks * ic_chunk_sz, jbgp.ic);
+
+        auto eff = [](dim_t m, dim_t n, dim_t k) {
+            return 2 * m * n * k / float(m * k + n * k + 2 * m * n);
+        };
+
+        float eff_osc_occ = eff(os_span_osc_occ, oc_span_osc_occ, k_span);
+        float eff_occ_osc = eff(os_span_occ_osc, oc_span_occ_osc, k_span);
+        bool do_occ_osc = eff_occ_osc > 1.2 * eff_osc_occ;
+
+        if ((jbgp.os_block < 32 || do_occ_osc) && is_f32_compute)
+            order = icc_occ_osc_ocb_osb;
 
         if (is_amx)
             amx_tile_configure(&brg_kernel_palettes_[base_brg_ker_idx][0]);
@@ -359,7 +389,16 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
         int icc {0}, occ {0}, osc {0};
         int start {start_init};
-        nd_iterator_init(start, osc, os_chunks, occ, oc_chunks);
+        switch (order) {
+            case osc_occ_icc_osb_ocb:
+            case osc_occ_osb_ocb_icc:
+            case icc_osc_occ_osb_ocb:
+                nd_iterator_init(start, osc, os_chunks, occ, oc_chunks);
+                break;
+            case icc_occ_osc_ocb_osb:
+                nd_iterator_init(start, occ, oc_chunks, osc, os_chunks);
+                break;
+        }
         while (start < end) {
             int ocb_s = occ * jbgp.nb_oc_blocking;
             int ocb_e = nstl::min(ocb_s + jbgp.nb_oc_blocking, jbgp.nb_oc);
@@ -376,6 +415,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 case osc_occ_osb_ocb_icc:
                     loop_end = icc_work * osb_work * ocb_work;
                     break;
+                case icc_occ_osc_ocb_osb:
                 case icc_osc_occ_osb_ocb: loop_end = osb_work * ocb_work; break;
             }
 
@@ -391,6 +431,9 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     break;
                 case icc_osc_occ_osb_ocb:
                     nd_iterator_init(0, osb, osb_work, ocb, ocb_work);
+                    break;
+                case icc_occ_osc_ocb_osb:
+                    nd_iterator_init(0, ocb, ocb_work, osb, osb_work);
                     break;
             }
 
@@ -415,6 +458,9 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     case icc_osc_occ_osb_ocb:
                         nd_iterator_step(osb, osb_work, ocb, ocb_work);
                         break;
+                    case icc_occ_osc_ocb_osb:
+                        nd_iterator_step(ocb, ocb_work, osb, osb_work);
+                        break;
                 }
             }
 
@@ -432,6 +478,17 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                             start = start_init;
                             nd_iterator_init(
                                     start, osc, os_chunks, occ, oc_chunks);
+                        }
+                    }
+                    break;
+                case icc_occ_osc_ocb_osb:
+                    nd_iterator_step(occ, oc_chunks, osc, os_chunks);
+                    if (start == end) {
+                        icc++;
+                        if (icc < icc_work) {
+                            start = start_init;
+                            nd_iterator_init(
+                                    start, occ, oc_chunks, osc, os_chunks);
                         }
                     }
                     break;
