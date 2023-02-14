@@ -50,6 +50,12 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
         DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("brgemm:", isa, ""),
                 brgemm_inner_product_fwd_t);
 
+        // flatten src/weights with spatial dimensions into 2D, for example:
+        //    N x IC' x H x W => NxIC
+        //    OC x IC' x KH x KW => OCxIC
+        memory_desc_t flattened_src_md;
+        memory_desc_t flattened_weight_md;
+
         status_t init(engine_t *engine) {
             using namespace utils;
             using namespace data_type;
@@ -81,8 +87,18 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     && !has_zero_dim_memory();
             if (!ok) return status::unimplemented;
 
+            dims_t flattened_dims;
+            auto flattened_IC = IC_total_padded();
+            flattened_dims[0] = MB();
+            flattened_dims[1] = flattened_IC;
+            CHECK(dnnl_memory_desc_reshape(&flattened_src_md, &src_md_, 2, flattened_dims));
+
+            flattened_dims[0] = OC();
+            flattened_dims[1] = flattened_IC;
+            CHECK(dnnl_memory_desc_reshape(&flattened_weight_md, &weights_md_, 2, flattened_dims));
+
             CHECK(brgemm_inner_product_utils::init_ip_conf(isa, jbgp_, *desc(),
-                    src_md_, weights_md_, dst_md_, bias_md_, attr_,
+                    flattened_src_md, flattened_weight_md, dst_md_, bias_md_, attr_,
                     dnnl_get_max_threads()));
 
             bool are_post_ops_applicable = one_of(true, jbgp_.with_sum,

@@ -69,9 +69,9 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     pd()->attr()->post_ops_, ctx);
 
     memory_tracking::grantor_t scratchpad = ctx.get_scratchpad_grantor();
-    const memory_desc_wrapper src_d(pd()->src_md());
+    const memory_desc_wrapper src_d(&pd()->flattened_src_md);
     const memory_desc_wrapper dst_d(pd()->dst_md());
-    const memory_desc_wrapper weights_d(pd()->weights_md(0));
+    const memory_desc_wrapper weights_d(&pd()->flattened_weight_md);
 
     DEFINE_SCALES_BUFFER(oscales);
 
