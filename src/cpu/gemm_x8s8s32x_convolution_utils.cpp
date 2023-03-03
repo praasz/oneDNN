@@ -93,6 +93,8 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
     const size_t last_oc = (end - 1) % OC_;
     const size_t first_os = start / OC_;
     const size_t last_os = (end - 1) / OC_;
+    const int32_t zp_dst_val = jcp_.zp.dst_exists ? *(zp.dst) : 0;
+
     if (post_ops_.len() == 0) {
         for (size_t os = first_os; os <= last_os; os++) {
             const size_t start_oc = (os == first_os) ? first_oc : 0;
@@ -108,6 +110,11 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
                     d += math::get_bias(bias, g * jcp_.oc + oc, bias_data_type_);
 
                 d *= scales[(g * jcp_.oc + oc) * scale_idx_mult_];
+
+                // quantize data
+                if (jcp_.with_dst_scale) d *= dst_scale;
+                if (jcp_.zp.dst_exists) d += zp_dst_val;
+
                 dst[dst_off] = qz_a1b0<float, dst_data_t>()(d);
             }
         }

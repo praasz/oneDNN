@@ -108,6 +108,18 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator {
             bias_data_type_size_ = types::data_type_size(bias_data_type_);
             compute_vregs_per_iter_++;
         }
+
+
+        if (jcp.with_dst_scale) {
+            vreg_dst_scale = Vmm(idx_compute_vreg_start_++);
+            // compute_vregs_per_iter_++;
+        }
+
+        if (jcp.zp.dst_exists) {
+            vreg_zp_dst_common = Vmm(idx_compute_vreg_start_++);
+            // compute_vregs_per_iter_++;
+        }
+
         if (do_sum_) {
             vreg_sum_scale = Vmm(idx_compute_vreg_start_++);
             compute_vregs_per_iter_++;
@@ -144,7 +156,7 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator {
             const zero_point_call_params_t &zp,
             const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
             const exec_ctx_t & /* ctx */, const memory_desc_t & /* dst_md */,
-            const single_gemm_conv_chunk_desc_t &) const override {
+            const single_gemm_conv_chunk_desc_t &chunk_desc) const override {
         if (end <= start) return;
 
         char *dst = (char *)void_dst;
@@ -156,15 +168,40 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator {
         args.dst = dst
                    + (os_offset * dst_os_stride_ + oc_offset)
                      * dst_data_type_size_;
+        const ptrdiff_t g_oc_offset = g * jcp_.oc;
+        const ptrdiff_t g_oc_offset_prologue = g_oc_offset + oc_offset;
         args.dst_orig = dst_orig;
         args.bias = bias + (g * jcp_.oc + oc_offset) * bias_data_type_size_;
+        args.zp_src = zp.src + (jcp_.zp.src_is_common ? 0 : g_oc_offset_prologue);
+        args.zp_src_comp
+            = zp.src_comp ? zp.src_comp + g_oc_offset_prologue : nullptr;
+        args.zp_dst = zp.dst;
         args.scales = scales + scale_idx_mult_ * (g * jcp_.oc + oc_offset);
+        args.dst_scale = dst_scale;
         args.sum_scale = sum_scale_;
         args.signed_scale = signed_scale;
         args.len = end - start;
         args.oc_offset = oc_offset;
         args.g_offset = g * jcp_.oc;
         args.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
+        args.dst_orig = dst_orig;
+
+        if (zp_pad_comp_helper_) {
+            const auto hw
+                = std::div(static_cast<dim_t>(os_offset), chunk_desc.w_size_);
+            args.h = hw.quot + chunk_desc.h_off_;
+            args.w = hw.rem + chunk_desc.w_off_;
+            args.w_size = chunk_desc.w_size_ + chunk_desc.w_off_;
+            args.w_off = chunk_desc.w_off_;
+            args.zp_src_pad_comp = zp.src_pad_comp;
+            const auto zp_src_pad_com_d
+                = zp_pad_comp_helper_->calculate_zp_src_pad_com_d(
+                    chunk_desc.d_off_);
+            args.zp_src_pad_com_d_offset = zp_src_pad_com_d.offset;
+            args.should_apply_zp_src_pad_comp_d
+                = zp_src_pad_com_d.should_apply_pad_comp_d;
+        }
+
         jit_generator::operator()(&args);
     }
 
@@ -173,7 +210,6 @@ private:
 
     struct ker_args_t {
         char *dst;
-        const void* dst_orig;
         const acc_data_t *acc;
         const char *bias;
         const float *scales;
@@ -182,8 +218,20 @@ private:
         float signed_scale;
         size_t len;
         size_t oc_offset;
+        const int32_t *zp_src;
+        const int32_t *zp_dst;
+        const int32_t *zp_src_comp;
+        const int32_t *zp_src_pad_comp;
+        size_t g_oc_offset_prologue;
         size_t g_offset;
         const void *post_ops_binary_rhs_arg_vec;
+        const void *dst_orig;
+        dim_t h;
+        dim_t w;
+        dim_t w_size;
+        dim_t w_off;
+        dim_t zp_src_pad_com_d_offset;
+        bool should_apply_zp_src_pad_comp_d;
     };
 
     nstl::vector<jit_uni_eltwise_injector_f32<isa> *> jit_eltwise_injectors_;
@@ -191,6 +239,7 @@ private:
     std::unique_ptr<binary_injector::jit_uni_binary_injector_t<isa>>
             jit_binary_injector_;
 
+    size_t number_of_reserved_zmm_regs_;
     using Vmm = typename cpu_isa_traits<isa>::Vmm;
     static const size_t vlen = cpu_isa_traits<isa>::vlen / sizeof(float);
 
@@ -240,6 +289,11 @@ private:
     int idx_compute_vreg_max_;
     int compute_vregs_per_iter_;
 
+    Vmm vreg_dst_scale;
+    Vmm vreg_zp_dst_common;
+
+    std::unique_ptr<jit_gemm_x8s8s32x_zp_pad_comp_helper> zp_pad_comp_helper_;
+
     int idx_vreg_dst(int iter) {
         int idx = idx_compute_vreg_start_ + iter * compute_vregs_per_iter_ + 0;
         assert(idx <= idx_compute_vreg_max_);
@@ -261,6 +315,15 @@ private:
     Xbyak::Xmm xmm_dst(int idx) { return Xbyak::Xmm(idx_vreg_dst(idx)); };
     Vmm vreg_bias(int idx) { return Vmm(idx_vreg_bias(idx)); };
     Vmm vreg_prev_dst(int idx) { return Vmm(idx_vreg_prev_dst(idx)); };
+
+    Vmm get_masked_vreg_dst(int idx, bool apply_mask) {
+        Vmm vreg_dst_ = vreg_dst(idx);
+        if (apply_mask)
+            vreg_dst_ = vreg_dst_ | kreg_rem_mask_short;
+        // else
+        //     vreg_dst_ = vreg_dst_ | kreg_rem_mask_vlen_;
+        return vreg_dst_;
+    }
 };
 
 template <cpu_isa_t isa>
@@ -300,6 +363,14 @@ void jit_pp_ker_t<isa>::generate() {
     mov(reg_len, ptr[reg_param + PARAM_OFF(len)]);
     mov(reg_oc_offset, ptr[reg_param + PARAM_OFF(oc_offset)]);
     mov(reg_g_offset, ptr[reg_param + PARAM_OFF(g_offset)]);
+
+    if (jcp_.zp.dst_exists) {
+        mov(reg_tmp, ptr[reg_param + PARAM_OFF(zp_dst)]);
+        vcvtdq2ps(vreg_zp_dst_common, ptr_b[reg_tmp]);
+    }
+
+    if (jcp_.with_dst_scale)
+        vbroadcastss(vreg_dst_scale, ptr[reg_param + PARAM_OFF(dst_scale)]);
     if (do_sum_)
         uni_vbroadcastss(vreg_sum_scale, ptr[reg_param + PARAM_OFF(sum_scale)]);
     if (do_signed_scaling_)
@@ -533,6 +604,14 @@ void jit_pp_ker_t<isa>::generate() {
             uni_vmulps(vreg_dst(idx), vreg_dst(idx), vreg_scale);
 
         apply_post_ops(offset, idx, apply_mask);
+
+        if (jcp_.with_dst_scale) {
+            uni_vmulps(vreg_dst_, vreg_dst(idx), vreg_dst_scale);
+        }
+
+        if (jcp_.zp.dst_exists) {
+            vaddps(vreg_dst_, vreg_dst(idx), vreg_zp_dst_common);
+        }
 
         if (dst_data_type_ != data_type::f32) {
             if (isa == avx512_core) {
