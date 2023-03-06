@@ -84,12 +84,17 @@ void primitive_task_start(primitive_kind_t kind) {
             CASE(layer_normalization_v2),
             CASE(depthwise),
             CASE(quantization),
+            CASE(binarization),
     };
 #undef CASE
     int kind_idx = (int)kind;
+    if ((size_t)kind_idx
+            < sizeof(prim_kind_itt_strings) / sizeof(prim_kind_itt_strings[0]))
+        kind_idx = 0;
     assert(kind_idx >= 0);
     assert((size_t)kind_idx
             < sizeof(prim_kind_itt_strings) / sizeof(prim_kind_itt_strings[0]));
+            
     __itt_task_begin(itt_domain(), __itt_null, __itt_null,
             prim_kind_itt_strings[kind_idx]);
     thread_primitive_kind = kind;
