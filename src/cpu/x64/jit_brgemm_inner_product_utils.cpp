@@ -268,6 +268,7 @@ bool is_balanced(int work, int min_work, int nthrs, int goal_nthrs = 0) {
 
 bool ip_fwd_adjust_thread_balance(const jit_brgemm_primitive_conf_t &jbgp) {
     if (IMPLICATION(jbgp.is_wei_layout_any, !jbgp.is_amx)) return false;
+    if (jbgp.weights_compressed) return false;
 
     int os_chunks = div_up(jbgp.os, get_os_block(jbgp, true, false));
 
