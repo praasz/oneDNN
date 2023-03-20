@@ -161,8 +161,8 @@ status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
                 const size_t last_oc = jcp.oc;
                 const size_t first_os = 0;
                 const size_t last_os = N;
-
-                const data_t* bias = bia_base ? bia_base + g * jcp.oc: nullptr;
+                // in (*pp_kernel_) real bias ptr = bias + first_oc
+                const data_t* bias = bia_base;
 
                 for (size_t os = first_os; os < last_os; ++os) {
                     data_t* dst_local = dst + os * dst_os_stride;
