@@ -69,12 +69,13 @@ struct jit_brgemm_kernel_t : public jit_generator {
                             broadcasting_strategy_t::per_mb_w,
                             broadcasting_strategy_t::per_w,
                             broadcasting_strategy_t::no_broadcast};
+            // rhs_dt_helper_vmm_idx must be different with rhs_prelu_helper_vmm_idx
             const binary_injector::rhs_arg_static_params_t rhs_sp {
                     static_cast<size_t>(vmm_tmp(0).getIdx()), this->r14,
                     this->r15, this->r13, preserve_gpr, preserve_vmm,
                     GET_OFF(post_ops_binary_rhs_arg_vec), GET_OFF(data_C_ptr_),
                     dst_md_wrapper, static_cast<size_t>(brg.ldb_tail),
-                    ld_tail_mask, use_exact_tail_scalar_bcast};
+                    ld_tail_mask, use_exact_tail_scalar_bcast, static_cast<size_t>(vmm_tmp(1).getIdx())};
             const binary_injector::static_params_t bsp {
                     this->param1, enabled_bcast_strategy, rhs_sp};
 
