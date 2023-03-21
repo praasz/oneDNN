@@ -25,6 +25,7 @@
 #include "cpu/platform.hpp"
 #include "cpu/x64/cpu_barrier.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
+#include <iostream>
 
 namespace dnnl {
 namespace impl {
@@ -41,7 +42,7 @@ using namespace brgemm_utils;
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *scratch) {
     brgemm_kernel_params_t brgemm_p;
-
+    // std::cout << "ptrA|" << batch->ptr.A << "|B|" << batch->ptr.B << "|ptr_C|" << ptr_C <<  std::endl;
     brgemm_p.batch = batch;
     brgemm_p.ptr_A = nullptr;
     brgemm_p.ptr_B = nullptr;
@@ -63,7 +64,7 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C, void *scratch) {
     brgemm_kernel_params_t brgemm_p;
-
+    std::cout << "ptrA|" << addr_A << "|ptr_B|" << addr_B << "|ptr_C|" << ptr_C <<  std::endl;
     brgemm_p.batch = batch;
     brgemm_p.ptr_A = addr_A;
     brgemm_p.ptr_B = addr_B;
@@ -75,6 +76,7 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.do_apply_comp = 0;
     brgemm_p.skip_accm = 0;
     brgemm_p.BS = bs;
+    
     assert(brg_kernel);
     (*brg_kernel)(&brgemm_p);
 }
@@ -108,6 +110,7 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.b_zp_compensations = post_ops_data.b_zp_compensations;
     brgemm_p.c_zp_values = post_ops_data.c_zp_values;
     brgemm_p.ptr_dst_scales = post_ops_data.dst_scales;
+    std::cout << "ptrA|" << batch->ptr.A << "|B|" << batch->ptr.B << "|ptr_C|" << ptr_C <<  std::endl;
     assert(brg_kernel);
     (*brg_kernel)(&brgemm_p);
 }

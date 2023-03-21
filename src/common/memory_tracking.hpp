@@ -164,6 +164,7 @@ enum {
     key_brgemm_primitive_buffer_a,
     key_brgemm_primitive_buffer_b,
     key_brgemm_primitive_buffer_comp,
+    key_brgemm_primitive_buffer_d,
     key_brgemm_primitive_zp_comp_a,
     key_brgemm_primitive_zp_comp_b,
     key_concat_iptrs,

@@ -65,6 +65,10 @@ status_t dnnl_matmul_primitive_desc_create(
                     one_of(op_d.bias_desc.dims[m_idx], 1, dst_md->dims[m_idx]));
     if (!ok) return status::invalid_arguments;
 
+    const int bia_mask = with_bias
+            ? utils::get_dims_mask(dst_md->dims, op_d.bias_desc.dims, ndims)
+            : 0;
+
     // check if other dims match.
     for (int d = 0; d < ndims - 2; ++d) {
         const dim_t s_dim = src_md->dims[d];
@@ -75,8 +79,7 @@ status_t dnnl_matmul_primitive_desc_create(
         if (one_of(DNNL_RUNTIME_DIM_VAL, s_dim, w_dim, d_dim, b_dim)) {
 
             if (!(everyone_is(DNNL_RUNTIME_DIM_VAL, s_dim, w_dim, d_dim)
-                        && IMPLICATION(
-                                with_bias, b_dim == DNNL_RUNTIME_DIM_VAL)))
+                        && IMPLICATION((bia_mask & (1 << d)) && with_bias, b_dim == DNNL_RUNTIME_DIM_VAL)))
                 return status::invalid_arguments;
         } else {
             // This follows numpy semantics of broadcasting when 0 is involved.

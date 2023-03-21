@@ -60,6 +60,7 @@ struct jit_brgemm_matmul_copy_a_t {
         dim_t current_K_start;
         dim_t current_K_blk;
         dim_t current_M_blk;
+        dim_t dynamic_src_ld;
     };
 
     virtual void operator()(ctx_t *ctx) = 0;

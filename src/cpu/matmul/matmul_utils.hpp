@@ -38,15 +38,9 @@ struct matmul_helper_t {
     int ndims() const { return dst_md_.ndims(); }
     bool batched() const { return ndims() > 2; }
 
-    dim_t batch() const {
-        return utils::array_product(dst_md_.dims(), ndims() - 2);
-    };
-    dim_t src_batch() const {
-        return utils::array_product(src_md_.dims(), ndims() - 2);
-    };
-    dim_t wei_batch() const {
-        return utils::array_product(weights_md_.dims(), ndims() - 2);
-    };
+    dim_t batch() const { return get_batch_size(dst_md_); };
+    dim_t src_batch() const { return get_batch_size(src_md_); };
+    dim_t wei_batch() const { return get_batch_size(weights_md_); };
 
     dim_t M() const { return dst_md_.dims()[ndims() - 2]; }
     dim_t N() const { return dst_md_.dims()[ndims() - 1]; }
@@ -66,6 +60,11 @@ struct matmul_helper_t {
     dim_t lda() const {
         const auto &strides = &src_md_.blocking_desc().strides[ndims() - 2];
         return strides[transA() == 'N' ? 0 : 1];
+    }
+
+    dim_t get_a_stride(int dim) const {
+        if (dim >= ndims() || dim < 0) return 0;
+        return src_md_.blocking_desc().strides[dim];
     }
 
     dim_t ldb() const {
@@ -163,6 +162,19 @@ private:
         }
 
         return true;
+    }
+    
+    dim_t get_batch_size(const mdw_t &tensor_md) const {
+        int batch_dims = ndims() - 2;
+        dim_t batch_size = 1;
+        for (int b_idx = 0; b_idx < batch_dims; b_idx++) {
+            dim_t batch_dim = tensor_md.dims()[b_idx];
+            if (DNNL_RUNTIME_DIM_VAL == batch_dim) return DNNL_RUNTIME_DIM_VAL;
+
+            batch_size *= batch_dim;
+        }
+
+        return batch_size;
     }
 };
 
