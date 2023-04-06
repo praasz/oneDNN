@@ -25,6 +25,9 @@
 #include "common/primitive_attr.hpp"
 #include "common/primitive_exec_types.hpp"
 
+// check
+// check 2
+
 namespace dnnl {
 namespace impl {
 namespace cpu {
