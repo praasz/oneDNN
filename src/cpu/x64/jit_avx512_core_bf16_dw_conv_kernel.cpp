@@ -211,9 +211,9 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::apply_postops(
         });
 
         depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  ptr[this->param1 + GET_OFF(oc_l_off)], vmm_idx_off,
+                                                  ptr[this->param1 + GET_OFF(dummy_oc_off)], vmm_idx_off,
                                                   this->rsp, base_post_ops_data_offset};
-        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_l_off)], vmm_idx_off, jcp.dst_dt,
+        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(dummy_oc_off)], vmm_idx_off, jcp.dst_dt,
                                                      this->rsp, base_post_ops_data_offset};
 
         injector_utils::vmm_index_set_t vmm_idxs;
@@ -419,7 +419,7 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::compute_loop(
     // so we use a memory variable for that
     if (this->jcp.with_depthwise || this->jcp.with_quantization) {
         mov(reg_d_bias, ptr[this->param1 + GET_OFF(oc_off)]);
-        mov(ptr[this->param1 + GET_OFF(oc_l_off)], reg_d_bias);
+        mov(ptr[this->param1 + GET_OFF(dummy_oc_off)], reg_d_bias);
     }
 
     push(reg_ch_blocks);
@@ -456,7 +456,7 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::compute_loop(
                 if (jcp.with_bias) add(reg_bias, bias_stride);
 
                 if (this->jcp.with_depthwise || this->jcp.with_quantization) {
-                    add(qword[this->param1 + GET_OFF(oc_l_off)], ch_step*sizeof(float));
+                    add(qword[this->param1 + GET_OFF(dummy_oc_off)], ch_step*sizeof(float));
                 }
 
                 sub(reg_ch_blocks, ch_step);
