@@ -1414,7 +1414,7 @@ status_t jit_uni_x8s8s32x_fwd_kernel<isa>::init_conf(jit_conv_conf_t &jcp,
         jcp.max_regs_ur = 14 - !jcp.is_resrc_depthwise - (jcp.signed_input || jcp.with_input_zp)
                 + (jcp.has_vnni);
     } else {
-        jcp.max_regs_ur = jcp.has_vnni ? 15 - jcp.signed_input : 12;
+        jcp.max_regs_ur = jcp.has_vnni ? 15 - (jcp.signed_input || jcp.with_input_zp) : 12;
     }
 
     if (jcp.src_zero_point || jcp.dst_zero_point) jcp.max_regs_ur = 9;
