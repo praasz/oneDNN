@@ -106,14 +106,6 @@ struct jit_avx2_1x1_convolution_with_dw_conv_fwd_t : public primitive_t {
             return status::success;
         }
 
-        const memory_desc_t *dst_md(int index = 0) const override {
-            return &dst_md_;
-        }
-
-        const memory_desc_t *arg_md(int index = 0) const override {
-            return convolution_fwd_pd_t::arg_md(index);
-        }
-
         arg_usage_t arg_usage(int arg) const override {
             return convolution_fwd_pd_t::arg_usage(arg);
         }
