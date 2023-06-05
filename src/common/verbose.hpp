@@ -76,6 +76,7 @@ struct const_expr_value {
                 stamp_.c_str(), logsubtype, ##__VA_ARGS__); \
     } while (0)
 
+#ifdef use_logging_info
 // Logging info
 #define VINFO(logtype, logsubtype, component, msg, ...) \
     do { \
@@ -84,6 +85,9 @@ struct const_expr_value {
                     #component "," msg ",%s:%d", ##__VA_ARGS__, __FILENAME__, \
                     __LINE__); \
     } while (0)
+#else
+    #define VINFO(logtype, logsubtype, component, msg, ...)
+#endif
 
 // Macro for boolean checks
 #define VCONDCHECK( \
