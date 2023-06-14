@@ -69,18 +69,13 @@ static bool is_direct_copy(const prb_t &prb) {
 }
 
 static bool prb_has_small_strides(const prb_t &prb) {
-    static constexpr ptrdiff_t max_stride = (1LL << 31) - 1;
-
+    constexpr ptrdiff_t max_stride = (1LL << 31) - 1;
     for (int d = 0; d < prb.ndims; ++d) {
         const ptrdiff_t cms = max_stride / prb.nodes[d].n;
-        if (is_direct_copy(prb)) {
-            if (prb.nodes[d].n > max_stride) return false;
-        } else {
-            const bool small_strides
-                    = prb.nodes[d].is < cms / (int)data_type_size(prb.itype)
-                    && prb.nodes[d].os < cms / (int)data_type_size(prb.otype);
-            if (!small_strides) return false;
-        }
+        const bool small_strides = true
+                && prb.nodes[d].is < cms / (int)data_type_size(prb.itype)
+                && prb.nodes[d].os < cms / (int)data_type_size(prb.otype);
+        if (!small_strides) return false;
     }
     return true;
 }
@@ -190,7 +185,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
                         mayiuse(avx512_core) || mayiuse(avx2_vnni_2))
                 && IMPLICATION(utils::one_of(f16, p.itype, p.otype),
                         mayiuse(avx512_core_fp16) || mayiuse(avx2_vnni_2))
-                && prb_has_small_strides(p);
+                && IMPLICATION(!is_direct_copy(p), prb_has_small_strides(p));
         return ok;
     }
 
