@@ -491,44 +491,44 @@ status_t acl_init_conf_dw(acl_conv_conf_t &acp, memory_desc_t &src_md,
                                     : arm_compute::DataLayout::NCHW;
 
     // For convolutions, int8 datatypes imply quantized types in ACL
-    acp.is_int8 = utils::one_of(src_d.data_type(), s8, u8)
+    const auto is_int8 = utils::one_of(src_d.data_type(), s8, u8)
             && wei_d.data_type() == s8;
 
     auto acl_src_data_t
-            = acl_utils::get_acl_data_t(src_d.data_type(), acp.is_int8);
+            = acl_utils::get_acl_data_t(src_d.data_type(), is_int8);
     auto acl_wei_data_t
-            = acl_utils::get_acl_data_t(wei_d.data_type(), acp.is_int8);
+            = acl_utils::get_acl_data_t(wei_d.data_type(), is_int8);
     auto acl_dst_data_t
-            = acl_utils::get_acl_data_t(dst_d.data_type(), acp.is_int8);
+            = acl_utils::get_acl_data_t(dst_d.data_type(), is_int8);
     auto acl_bia_data_t
-            = acl_utils::get_acl_data_t(bia_d.data_type(), acp.is_int8);
+            = acl_utils::get_acl_data_t(bia_d.data_type(), is_int8);
 
     if (acl_bia_data_t == arm_compute::DataType::UNKNOWN)
         acl_bia_data_t = arm_compute::DataType::F32;
 
     // clang-format off
-    acp.src_info = arm_compute::TensorInfo(
+    acp.src_tensor_info = arm_compute::TensorInfo(
             is_nspc ? arm_compute::TensorShape(ic, iw, ih, mb) :
             arm_compute::TensorShape(iw, ih, ic, mb),
             1,
             acl_src_data_t,
             acl_layout);
 
-    acp.wei_info = arm_compute::TensorInfo(
+    acp.wei_tensor_info = arm_compute::TensorInfo(
             is_nspc ? arm_compute::TensorShape(ic, kw, kh, 1) :
             arm_compute::TensorShape(kw, kh, ic, 1),
             1,
             acl_wei_data_t,
             acl_layout);
 
-    acp.dst_info = arm_compute::TensorInfo(
+    acp.dst_tensor_info = arm_compute::TensorInfo(
             is_nspc ? arm_compute::TensorShape(oc, ow, oh, mb) :
             arm_compute::TensorShape(ow, oh, oc, mb),
             1,
             acl_dst_data_t,
             acl_layout);
 
-    acp.bia_info = arm_compute::TensorInfo(
+    acp.bia_tensor_info = arm_compute::TensorInfo(
             acp.with_bias ? arm_compute::TensorShape(oc)
                           : arm_compute::TensorShape(),
             1,
@@ -537,14 +537,14 @@ status_t acl_init_conf_dw(acl_conv_conf_t &acp, memory_desc_t &src_md,
     // clang-format on
 
     // Add quantization info to tensors
-    if (acp.is_int8) {
+    if (is_int8) {
         // TODO: Add runtime scales support. Creation time scales will be remove
         // in 3.0.
         // const float *scales = attr.output_scales_.scales_;
-        //acp.src_info.set_quantization_info(arm_compute::QuantizationInfo(1, 0));
-        //acp.bia_info.set_quantization_info(arm_compute::QuantizationInfo(1, 0));
-        //acp.wei_info.set_quantization_info(arm_compute::QuantizationInfo(1, 0));
-        //acp.dst_info.set_quantization_info(
+        //acp.src_tensor_info.set_quantization_info(arm_compute::QuantizationInfo(1, 0));
+        //acp.bia_tensor_info.set_quantization_info(arm_compute::QuantizationInfo(1, 0));
+        //acp.wei_tensor_info.set_quantization_info(arm_compute::QuantizationInfo(1, 0));
+        //acp.dst_tensor_info.set_quantization_info(
         //       arm_compute::QuantizationInfo(1.0f / scales[0], 0));
         return status::unimplemented;
     }
@@ -563,10 +563,10 @@ status_t init_conf_dw(acl_conv_conf_t &acp, memory_desc_t &src_md,
     // clang-format off
     // Validate convolution manually to check for return status
     ACL_CHECK_VALID(arm_compute::NEDepthwiseConvolutionLayer::validate(
-        &acp.src_info,
-        &acp.wei_info,
-        acp.with_bias ? &acp.bia_info : nullptr,
-        &acp.dst_info,
+        &acp.src_tensor_info,
+        &acp.wei_tensor_info,
+        acp.with_bias ? &acp.bia_tensor_info : nullptr,
+        &acp.dst_tensor_info,
         acp.padstride_info,
         1,
         acp.act_info,
