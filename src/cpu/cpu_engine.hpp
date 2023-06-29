@@ -168,7 +168,7 @@ public:
         *engine = new cpu_engine_t();
 
 #if DNNL_USE_ACL
-        dnnl::impl::cpu::aarch64::acl_thread_utils::set_acl_threading();
+        dnnl::impl::cpu::acl::acl_thread_utils::set_acl_threading();
 #endif
         return status::success;
     };
