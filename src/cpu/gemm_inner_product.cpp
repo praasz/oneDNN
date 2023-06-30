@@ -43,8 +43,7 @@ status_t gemm_inner_product_fwd_t<data_type>::execute_forward(
             = binary_injector_utils::prepare_binary_args(
                     this->pd()->attr()->post_ops_, ctx);
 
-    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
-
+    const dim_t MB = pd()->MB();
     const dim_t OC = pd()->OC();
     const dim_t IC = pd()->IC_total_padded();
 
@@ -87,8 +86,7 @@ status_t gemm_inner_product_bwd_data_t<data_type>::execute_backward_data(
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
 
-    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
-
+    const dim_t MB = pd()->MB();
     const dim_t OC = pd()->OC();
     const dim_t IC = pd()->IC_total_padded();
 
