@@ -563,7 +563,10 @@ void jit_io_helper_t<Xbyak::Zmm>::load_byte_by_byte(
 template <typename Vmm>
 void jit_io_helper_t<Vmm>::load_byte_by_byte(const Xbyak::Address &src_addr,
         const Vmm &dst_vmm, const int load_size) {
-    host_->uni_vxorps(dst_vmm, dst_vmm, dst_vmm);
+    static constexpr bool is_zmm = std::is_same<Vmm, Xbyak::Zmm>::value;
+    UNUSED(is_zmm);
+    assert(!is_zmm && "Load byte by byte is not supported for Zmms.");
+
     host_->load_data(data_type_, dst_vmm, src_addr, load_size);
 
     if (utils::one_of(data_type_, data_type::s32, data_type::s8, data_type::u8))
