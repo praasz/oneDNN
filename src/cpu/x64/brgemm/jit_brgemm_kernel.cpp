@@ -555,6 +555,8 @@ void jit_brgemm_kernel_t<isa, Wmm>::cvt2ps(data_type_t type_in,
         const Vmm vmm_in, const Xbyak::Operand &op, bool mask_flag, bool store,
         Xbyak::Opmask ktail_mask, int tail_size) {
     Vmm vmm = vmm_in;
+    if (brg.is_snippets)
+        return;
     const bool has_tail
             = op.isMEM() && tail_size != vreg_traits<Vmm>::vlen / sizeof(float);
     if (IMPLICATION(has_tail, is_superset(brg.isa_impl, avx512_core))) {
@@ -883,16 +885,25 @@ void jit_brgemm_kernel_t<isa, Wmm>::apply_alpha_beta(
         if (use_vadd_for_beta) {
             if (IMPLICATION(is_tail, is_superset(brg.isa_impl, avx512_core))) {
                 auto vmm_masked = vmm_mask(vmm, is_tail, false, k_mask);
-                if (brg.is_int8)
-                    uni_vpaddd(vmm_masked, vmm, ptr_C);
-                else
-                    uni_vaddps(vmm_masked, vmm, ptr_C);
+                if (brg.is_snippets) {
+                    if (brg.is_int8)
+                        uni_vpaddd(vmm_masked, vmm, vmm);
+                    else
+                        uni_vaddps(vmm_masked, vmm, vmm);
+                } else {
+                    if (brg.is_int8)
+                        uni_vpaddd(vmm_masked, vmm, ptr_C);
+                    else
+                        uni_vaddps(vmm_masked, vmm, ptr_C);
+                }
             } else {
-                vmaskmovps(vmm_prev_dst, vmm_tail_mask(), ptr_C);
+                if (!brg.is_snippets) {
+                    vmaskmovps(vmm_prev_dst, vmm_tail_mask(), ptr_C);
+                }
                 if (brg.is_int8)
-                    uni_vpaddd(vmm, vmm, vmm_prev_dst);
-                else
-                    uni_vaddps(vmm, vmm, vmm_prev_dst);
+                        uni_vpaddd(vmm, vmm, vmm_prev_dst);
+                    else
+                        uni_vaddps(vmm, vmm, vmm_prev_dst);
             }
         } else {
             const int ld_size = is_tail ? brg.ldb_tail : brg.ld_block;
@@ -1027,13 +1038,14 @@ void jit_brgemm_kernel_t<isa, Wmm>::store_accumulators_apply_post_ops(
             const auto addr = ptr[reg_aux_scales + scales_offset(ld)];
             const bool is_tail = is_ld_tail && ld + 1 == ld_block2;
             auto vmm_scales = vmm_tmp(0);
-            if (IMPLICATION(is_tail, isa_has_masks(brg.isa_impl))) {
+            if (IMPLICATION(is_tail, isa_has_masks(brg.isa_impl)) && !brg.is_snippets) {
                 const Vmm vmm_masked
                         = vmm_mask(vmm_scales, is_tail, false, k_mask);
                 uni_vmovups(vmm_masked, addr);
             } else {
                 auto vmm_scales = vmm_tmp(0);
-                vmaskmovps(vmm_scales, vmm_tail_mask(), addr);
+                if (!brg.is_snippets)
+                    vmaskmovps(vmm_scales, vmm_tail_mask(), addr);
             }
             for (int bd = 0; bd < bd_block; bd++) {
                 auto vmm = accm(ld_block2, bd, ld);
@@ -1065,7 +1077,9 @@ void jit_brgemm_kernel_t<isa, Wmm>::store_accumulators_apply_post_ops(
     if (brg.with_dst_scales) {
         mov(reg_aux_dst_scales, ptr[rsp + reg_dst_scales_offs_]);
         auto vmm_dst_scales = vmm_tmp(0);
-        vbroadcastss(vmm_dst_scales, ptr[reg_aux_dst_scales]);
+        if (!brg.is_snippets) {
+            vbroadcastss(vmm_dst_scales, ptr[reg_aux_dst_scales]);
+        }
 
         for (int ld = 0; ld < ld_block2; ld++) {
             for (int bd = 0; bd < bd_block; bd++) {
@@ -1079,11 +1093,12 @@ void jit_brgemm_kernel_t<isa, Wmm>::store_accumulators_apply_post_ops(
         mov(reg_aux_zp_c_values, ptr[rsp + reg_aux_zp_c_values_offs_]);
         auto vmm_zp_c = vmm_tmp(0);
         if (brg.zp_type_c == brgemm_broadcast_t::per_tensor) {
-            if (is_superset(brg.isa_impl, avx512_core)) {
+            if (is_superset(brg.isa_impl, avx512_core) && !brg.is_snippets) {
                 uni_vcvtdq2ps(vmm_zp_c,
                         EVEX_compress_addr(reg_aux_zp_c_values, 0, true));
             } else {
-                uni_vpbroadcastd(vmm_zp_c, ptr[reg_aux_zp_c_values]);
+                if (!brg.is_snippets)
+                    uni_vpbroadcastd(vmm_zp_c, ptr[reg_aux_zp_c_values]);
                 uni_vcvtdq2ps(vmm_zp_c, vmm_zp_c);
             }
         }
@@ -1140,24 +1155,26 @@ void jit_brgemm_kernel_t<isa, Wmm>::store_accumulators_apply_post_ops(
                 const Vmm r_vmm = vmm_mask(vmm, is_tail, true, k_mask);
                 const Vmm_lower_t r_ymm
                         = vmm_lower_mask(vmm_lower, is_tail, true, k_mask);
-                switch (brg.dt_d) {
-                    case data_type::f32:
-                    case data_type::s32: uni_vmovups(addr, r_vmm); break;
-                    case data_type::bf16: // TODO - clean
-                        if (brg.is_bf16_emu) {
-                            bf16_emu_->vcvtneps2bf16(vmm_lower, vmm);
-                        } else {
-                            vcvtneps2bf16(vmm_lower, vmm);
-                        }
-                        vmovdqu16(addr, r_ymm);
-                        break;
-                    case data_type::f16:
-                        vcvtps2ph(vmm_lower, vmm, _op_mxcsr);
-                        vmovdqu16(addr, r_ymm);
-                        break;
-                    case data_type::s8: vpmovsdb(addr, r_vmm); break;
-                    case data_type::u8: vpmovusdb(addr, r_vmm); break;
-                    default: assert(!"unknown dst_dt");
+                if (!brg.is_snippets) {
+                    switch (brg.dt_d) {
+                        case data_type::f32:
+                        case data_type::s32: uni_vmovups(addr, r_vmm); break;
+                        case data_type::bf16: // TODO - clean
+                            if (brg.is_bf16_emu) {
+                                bf16_emu_->vcvtneps2bf16(vmm_lower, vmm);
+                            } else {
+                                vcvtneps2bf16(vmm_lower, vmm);
+                            }
+                            vmovdqu16(addr, r_ymm);
+                            break;
+                        case data_type::f16:
+                            vcvtps2ph(vmm_lower, vmm, _op_mxcsr);
+                            vmovdqu16(addr, r_ymm);
+                            break;
+                        case data_type::s8: vpmovsdb(addr, r_vmm); break;
+                        case data_type::u8: vpmovusdb(addr, r_vmm); break;
+                        default: assert(!"unknown dst_dt");
+                    }
                 }
             } else {
                 const int ld_block = is_tail ? brg.ldb_tail : brg.ld_block;
@@ -1181,7 +1198,8 @@ void jit_brgemm_kernel_t<isa, Wmm>::apply_compensation(
     if (!brg.req_cal_comp_pads && brg.zp_type_a != brgemm_broadcast_t::none) {
         auto vmm_zp_a_val = vmm_tmp(1);
         mov(reg_zp_a_val, ptr[rsp + reg_zp_a_val_offs_]);
-        uni_vpbroadcastd(vmm_zp_a_val, reg_zp_a_val.cvt32());
+        if (!brg.is_snippets)
+            uni_vpbroadcastd(vmm_zp_a_val, reg_zp_a_val.cvt32());
 
         mov(reg_aux_zp_comp_a, ptr[rsp + reg_aux_zp_comp_a_offs_]);
         for (int ld = 0; ld < ld_block2; ld++) {
@@ -1189,7 +1207,7 @@ void jit_brgemm_kernel_t<isa, Wmm>::apply_compensation(
             auto vmm_zp_comp_a = vmm_tmp(0);
             int zp_comp_a_off = zp_comp_a_offset(ld);
             // apply src zero points value to the accumulated values
-            if (IMPLICATION(is_tail, isa_has_masks(brg.isa_impl))) {
+            if (IMPLICATION(is_tail, isa_has_masks(brg.isa_impl)) && !brg.is_snippets) {
                 auto zp_comp_a_addr
                         = EVEX_compress_addr(reg_aux_zp_comp_a, zp_comp_a_off);
                 auto vmm_zp_comp_a_masked
@@ -1198,7 +1216,8 @@ void jit_brgemm_kernel_t<isa, Wmm>::apply_compensation(
             } else {
                 // cannot use vmaskmovps as vmm_zp_a_val clashes with
                 // vmm_tail_mask
-                load_data(data_type::s32, vmm_zp_comp_a,
+                if (!brg.is_snippets)
+                    load_data(data_type::s32, vmm_zp_comp_a,
                         ptr[reg_aux_zp_comp_a + zp_comp_a_off], brg.ldb_tail);
             }
             uni_vpmulld(vmm_zp_comp_a, vmm_zp_comp_a, vmm_zp_a_val);
@@ -1220,7 +1239,10 @@ void jit_brgemm_kernel_t<isa, Wmm>::apply_compensation(
                 if (is_superset(brg.isa_impl, avx512_core)) {
                     const auto zp_comp_b_addr = EVEX_compress_addr(
                             reg_aux_zp_comp_b, zp_comp_b_off, true);
-                    uni_vpaddd(vmm, vmm, zp_comp_b_addr);
+                    if (!brg.is_snippets)
+                        uni_vpaddd(vmm, vmm, zp_comp_b_addr);
+                    else
+                        uni_vpaddd(vmm, vmm, vmm);
                 } else {
                     const auto vmm_zp_comp_b = vmm_tmp(2);
                     uni_vpbroadcastd(vmm_zp_comp_b,
@@ -1241,8 +1263,9 @@ void jit_brgemm_kernel_t<isa, Wmm>::apply_compensation(
                 auto comp_addr = maybe_EVEX_compress_addr(
                         reg_aux_compensation, comp_offset);
                 vmm_comp = vmm_mask(vmm_comp, is_tail, false, k_mask);
-                uni_vmovups(vmm_comp, comp_addr);
-            } else
+                if (!brg.is_snippets)
+                    uni_vmovups(vmm_comp, comp_addr);
+            } else if (!brg.is_snippets)
                 vmaskmovps(vmm_comp, vmm_tail_mask(),
                         ptr[reg_aux_compensation + comp_offset]);
 
@@ -1287,12 +1310,14 @@ void jit_brgemm_kernel_t<isa, Wmm>::store_accumulators_without_post_ops(
             auto vmm = accm(ld_block2, bd, ld);
             const auto addr_c = ptr[reg_aux_C + C_offset(bd, ld)];
             const bool is_tail = is_ld_tail && ld + 1 == ld_block2;
-            if (!is_tail)
-                uni_vmovups(addr_c, vmm);
-            else if (isa_has_masks(brg.isa_impl)) { // is_tail
-                uni_vmovups(addr_c | ld_tail_mask | T_z, vmm);
-            } else {
-                vmaskmovps(addr_c, vmm_tail_mask(), vmm);
+            if (!brg.is_snippets) {
+                if (!is_tail)
+                    uni_vmovups(addr_c, vmm);
+                else if (isa_has_masks(brg.isa_impl)) { // is_tail
+                    uni_vmovups(addr_c | ld_tail_mask | T_z, vmm);
+                } else {
+                    vmaskmovps(addr_c, vmm_tail_mask(), vmm);
+                }
             }
         }
     }
@@ -1661,12 +1686,14 @@ void jit_brgemm_kernel_t<isa, Wmm>::compute_int8_compensation(int rd_loop,
     for (int ld = 0; ld < ld_block2; ++ld) {
         const auto addr = ptr[reg_aux_B + B_offset(ld, rd)];
         const bool is_tail = is_ld_tail && ld + 1 == ld_block2;
-        if (IMPLICATION(is_tail, is_superset(brg.isa_impl, avx512_core))) {
-            auto vmm_store = vmm_mask(load(), is_tail, false, ld_tail_mask);
-            uni_vmovups(vmm_store, addr);
-        } else {
-            load_bytes(
-                    load(), addr, brg.typesize_B * brg.ldb_tail * brg.ld_step);
+        if (!brg.is_snippets) {
+            if (IMPLICATION(is_tail, is_superset(brg.isa_impl, avx512_core))) {
+                auto vmm_store = vmm_mask(load(), is_tail, false, ld_tail_mask);
+                uni_vmovups(vmm_store, addr);
+            } else {
+                load_bytes(
+                        load(), addr, brg.typesize_B * brg.ldb_tail * brg.ld_step);
+            }
         }
 
         if (brg.req_cal_comp_pads) {
@@ -1710,24 +1737,28 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
         if (is_tail) {
             uni_vpxor(v1, v1, v1);
             Xmm xmm_tmp = Xmm(v1.getIdx());
-            load_bytes(
+            if (!brg.is_snippets) {
+                load_bytes(
                     xmm_tmp, reg_aux_A, offset, rd_tail_size * brg.typesize_A);
+            }
             uni_vpbroadcastd(v1, xmm_tmp);
         } else {
-            if (dt == data_type::f32) {
-                uni_vbroadcastss(v1, ptr[reg_aux_A + offset]);
-            } else if (dt == data_type::bf16) {
-                if (brg.isa_impl == avx2_vnni_2)
-                    vbcstnebf162ps(v1, ptr[reg_aux_A + offset]);
-                else
+            if (!brg.is_snippets) {
+                if (dt == data_type::f32) {
+                    uni_vbroadcastss(v1, ptr[reg_aux_A + offset]);
+                } else if (dt == data_type::bf16) {
+                    if (brg.isa_impl == avx2_vnni_2)
+                        vbcstnebf162ps(v1, ptr[reg_aux_A + offset]);
+                    else
+                        uni_vpbroadcastd(v1, ptr[reg_aux_A + offset]);
+                } else if (one_of(dt, data_type::s8, data_type::u8)) {
                     uni_vpbroadcastd(v1, ptr[reg_aux_A + offset]);
-            } else if (one_of(dt, data_type::s8, data_type::u8)) {
-                uni_vpbroadcastd(v1, ptr[reg_aux_A + offset]);
-            } else if (dt == data_type::f16) {
-                if (brg.isa_impl == avx2_vnni_2)
-                    vbcstnesh2ps(v1, ptr[reg_aux_A + offset]);
-                else
-                    vcvtph2psx(v1, ptr_b[reg_aux_A + offset]);
+                } else if (dt == data_type::f16) {
+                    if (brg.isa_impl == avx2_vnni_2)
+                        vbcstnesh2ps(v1, ptr[reg_aux_A + offset]);
+                    else
+                        vcvtph2psx(v1, ptr_b[reg_aux_A + offset]);
+                }
             }
         }
 
@@ -1759,40 +1790,49 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                 const auto addr = ptr[reg_aux_B + B_offset(ld, rd)];
                 const Vmm vmm_load
                         = vmm_mask(load(), is_ld_tail, false, ld_tail_mask);
-                // Note: Assuming the tails are properly padded/blocked for
-                // avx2_vnni_2 with xf16 data type, as the B matrix is generally
-                // at least double-blocked.
-                if (brg.dt_b == data_type::f16) {
-                    if (brg.isa_impl == avx2_vnni_2) {
+                if (!brg.is_snippets) {
+                    // Note: Assuming the tails are properly padded/blocked for
+                    // avx2_vnni_2 with xf16 data type, as the B matrix is generally
+                    // at least double-blocked.
+                    if (brg.dt_b == data_type::f16) {
+                        if (brg.isa_impl == avx2_vnni_2) {
+                            if (rd % 2 == 0)
+                                vcvtneeph2ps(vmm_load, addr);
+                            else
+                                vcvtneoph2ps(vmm_load, addr);
+                        } else
+                            vcvtph2psx(vmm_load, addr);
+                    } else if (brg.dt_b == data_type::bf16
+                            && brg.isa_impl == avx2_vnni_2) {
                         if (rd % 2 == 0)
-                            vcvtneeph2ps(vmm_load, addr);
+                            vcvtneebf162ps(vmm_load, addr);
                         else
-                            vcvtneoph2ps(vmm_load, addr);
-                    } else
-                        vcvtph2psx(vmm_load, addr);
-                } else if (brg.dt_b == data_type::bf16
-                        && brg.isa_impl == avx2_vnni_2) {
-                    if (rd % 2 == 0)
-                        vcvtneebf162ps(vmm_load, addr);
-                    else
-                        vcvtneobf162ps(vmm_load, addr);
-                } else if (is_ld_tail) {
-                    if (is_superset(brg.isa_impl, avx512_core)) {
-                        uni_vmovups(vmm_load, addr);
+                            vcvtneobf162ps(vmm_load, addr);
+                    } else if (is_ld_tail) {
+                        if (is_superset(brg.isa_impl, avx512_core)) {
+                            uni_vmovups(vmm_load, addr);
+                        } else {
+                            load_bytes(vmm_load, addr,
+                                    brg.typesize_B * brg.ldb_tail * brg.ld_step);
+                        }
                     } else {
-                        load_bytes(vmm_load, addr,
-                                brg.typesize_B * brg.ldb_tail * brg.ld_step);
+                        uni_vmovups(vmm_load, addr);
                     }
-                } else {
-                    uni_vmovups(vmm_load, addr);
                 }
                 for (int bd = bd_b; bd < bd_e; bd++) {
                     auto vmm = accm(ld_block2, bd, ld);
-                    if (is_emdbd)
-                        uni_vfmadd231ps(vmm, load(),
-                                ptr_b[reg_aux_A + A_offset(bd, rd)]);
-                    else
-                        dot_product(vmm, load(), bcst(bd));
+                    if (!brg.is_snippets) {
+                        if (is_emdbd)
+                            uni_vfmadd231ps(vmm, load(),
+                                    ptr_b[reg_aux_A + A_offset(bd, rd)]);
+                        else
+                            dot_product(vmm, load(), bcst(bd));
+                    } else {
+                        if (is_emdbd)
+                            uni_vfmadd231ps(vmm, load(), vmm);
+                        else
+                            dot_product(vmm, load(), bcst(bd));
+                        }
                 }
             }
         }
@@ -1803,33 +1843,35 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                 const auto addr = ptr[reg_aux_B + B_offset(ld, rd)];
                 const Vmm vmm_load
                         = vmm_mask(load(ld), is_ld_tail, false, ld_tail_mask);
-                // Note: Assuming the tails are properly padded/blocked for
-                // avx2_vnni_2, as the B matrix is generally
-                // at least double-blocked.
-                if (brg.dt_b == data_type::f16) {
-                    if (brg.isa_impl == avx2_vnni_2) {
+                if (!brg.is_snippets) {
+                    // Note: Assuming the tails are properly padded/blocked for
+                    // avx2_vnni_2, as the B matrix is generally
+                    // at least double-blocked.
+                    if (brg.dt_b == data_type::f16) {
+                        if (brg.isa_impl == avx2_vnni_2) {
+                            if (rd % 2 == 0)
+                                vcvtneeph2ps(vmm_load, addr);
+                            else
+                                vcvtneoph2ps(vmm_load, addr);
+                        } else {
+                            vcvtph2psx(vmm_load, addr);
+                        }
+                    } else if (brg.dt_b == data_type::bf16
+                            && brg.isa_impl == avx2_vnni_2) {
                         if (rd % 2 == 0)
-                            vcvtneeph2ps(vmm_load, addr);
+                            vcvtneebf162ps(vmm_load, addr);
                         else
-                            vcvtneoph2ps(vmm_load, addr);
+                            vcvtneobf162ps(vmm_load, addr);
+                    } else if (is_ld_tail) {
+                        if (is_superset(brg.isa_impl, avx512_core)) {
+                            uni_vmovups(vmm_load, addr);
+                        } else {
+                            load_bytes(vmm_load, addr,
+                                    brg.typesize_B * brg.ldb_tail * brg.ld_step);
+                        }
                     } else {
-                        vcvtph2psx(vmm_load, addr);
-                    }
-                } else if (brg.dt_b == data_type::bf16
-                        && brg.isa_impl == avx2_vnni_2) {
-                    if (rd % 2 == 0)
-                        vcvtneebf162ps(vmm_load, addr);
-                    else
-                        vcvtneobf162ps(vmm_load, addr);
-                } else if (is_ld_tail) {
-                    if (is_superset(brg.isa_impl, avx512_core)) {
                         uni_vmovups(vmm_load, addr);
-                    } else {
-                        load_bytes(vmm_load, addr,
-                                brg.typesize_B * brg.ldb_tail * brg.ld_step);
                     }
-                } else {
-                    uni_vmovups(vmm_load, addr);
                 }
             }
 
@@ -1845,17 +1887,24 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                     broadcast(bcst(), A_offset(bd, rd),
                             have_to_load_bytes && bd_by_load_bytes, brg.dt_a);
                 }
-                if (prefetch_count_B < ld_block2) {
+                if (prefetch_count_B < ld_block2 && !brg.is_snippets) {
                     prefetcht0(ptr[reg_aux_B + B_offset(prefetch_count_B++, rd)
                             + brg.LDB * brg.rd_block * brg.typesize_B]);
                 }
                 for (int ld = 0; ld < ld_block2; ld++) {
                     auto vmm = accm(ld_block2, bd, ld);
-                    if (is_emdbd)
-                        uni_vfmadd231ps(vmm, load(ld),
-                                ptr_b[reg_aux_A + A_offset(bd, rd)]);
-                    else
-                        dot_product(vmm, load(ld), bcst());
+                    if (!brg.is_snippets) {
+                        if (is_emdbd)
+                            uni_vfmadd231ps(vmm, load(ld),
+                                    ptr_b[reg_aux_A + A_offset(bd, rd)]);
+                        else
+                            dot_product(vmm, load(ld), bcst());
+                    } else {
+                        if (is_emdbd)
+                            uni_vfmadd231ps(vmm, load(ld), vmm);
+                        else
+                            dot_product(vmm, load(ld), bcst());
+                    }
                 }
             }
         }

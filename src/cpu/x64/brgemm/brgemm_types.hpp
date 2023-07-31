@@ -275,6 +275,8 @@ struct brgemm_t {
     const primitive_attr_t *attr = nullptr;
     const memory_desc_t *dst_md = nullptr;
 
+    bool is_snippets = false;
+
     bool is_row_major() const {
         assert(layout != brgemm_layout_undef);
         return layout == brgemm_row_major;
