@@ -84,11 +84,19 @@ void jit_uni_eltwise_injector_f32<isa, Wmm>::injector_preamble(
         preserved_vec_idxs[preserved_vecs_count++] = idx;
     }
 
-    for (size_t idx = preserved_vecs_count; idx < vecs_count; idx++) {
+    // Exp need 3 aux vecs and 0 aux gpr.
+    // Hardcode start_vec_idx to be 16, so that aux vecs are all different for loop unrolling,
+    // i.e. unrolled loop 1: 16 17 18
+    //      unrolled loop 2: 19 20 21
+    //      unrolled loop 3: 22 23 24
+    //      unrolled loop 4: 25 26 27
+    static size_t start_vec_idx = 16;
+    for (size_t idx = start_vec_idx; idx < vecs_count; idx++) {
         if (preserved_vecs_count >= vecs_to_preserve) break;
         if (start_idx <= idx && idx < end_idx) continue;
 
         preserved_vec_idxs[preserved_vecs_count++] = idx;
+        start_vec_idx++;
     }
 
     size_t preserved_vecs_count_tail = vecs_to_preserve - preserved_vecs_count;
