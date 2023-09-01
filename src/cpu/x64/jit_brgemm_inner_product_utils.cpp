@@ -337,7 +337,16 @@ int jit_brgemm_ip_conf_t::get_adjusted_oc_block() const {
             && everyone_is(f32, jbgp.src_dt, jbgp.wei_dt, jbgp.dst_dt);
     const bool is_avx512 = is_superset(jbgp.isa, avx512_core);
     const bool is_f32_compute_avx512 = is_f32_compute && is_avx512;
-
+    if (jbgp.is_amx && jbgp.wei_dt == bf16 && !jbgp.is_bf32) {
+        auto block_cnt_env = std::getenv("BLOCK_CNT");
+        auto weight_size_env= std::getenv("WEIGHT_SIZE");
+        if (block_cnt_env && weight_size_env) {
+                int block_cnt = atoi(block_cnt_env);
+                auto weight_size_MB = atoi(weight_size_env);
+                if (jbgp.ic * jbgp.oc * 2 >= weight_size_MB * (1 << 20))
+                        return block_cnt;
+        }
+    }
     // we can't change block size on forward and weights update (external)
     // if layout is set by user, for backward data it can be chosen different
     // from external in this case because copy routine
