@@ -43,7 +43,6 @@ struct conv_gemm_conf_t {
     bool with_bias;
     bool with_eltwise;
     bool with_binary;
-    bool with_depthwise;
     bool with_sum;
     post_ops_t post_ops;
     bool is_nspc;
@@ -70,9 +69,6 @@ struct conv_gemm_conf_t {
     size_t dst_os_stride;
     size_t scale_idx_mult;
     bool with_dst_scale;
-
-    bool with_input_zp;
-    bool with_weights_zp;
 };
 
 struct single_gemm_conv_chunk_desc_t {
@@ -88,28 +84,6 @@ struct single_gemm_conv_chunk_desc_t {
     dim_t w_size_ = 0;
 };
 
-namespace gemm_convolution_utils {
-
-struct pp_kernel_t {
-    static pp_kernel_t *create(
-            const convolution_pd_t *pd, const conv_gemm_conf_t &jcp);
-
-    virtual ~pp_kernel_t() = default;
-
-    virtual void operator()(float *dst_orig, float *dst, const float *bias, const int len, const int oc_start, const int oc_work, const int oc_stride,
-                            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const = 0;
-
-    virtual status_t create_kernel() { return status::success; }
-
-protected:
-    pp_kernel_t(const convolution_pd_t *pd, const conv_gemm_conf_t &jcp);
-
-    bool do_bias_ = false;
-    post_ops_t post_ops_;
-};
-
-} // namespace gemm_convolution_utils
-
 namespace jit_gemm_convolution_utils {
 template <typename data_type_t>
 void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
@@ -121,7 +95,7 @@ void transpose_dt(const conv_gemm_conf_t &jcp, const T *__restrict im,
 
 template <typename im_dt, typename col_dt>
 void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict im,
-        col_dt *__restrict col, dim_t od, const uint8_t *__restrict input_zp = nullptr);
+        col_dt *__restrict col, dim_t od);
 
 template <typename data_type_t>
 void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
@@ -130,7 +104,7 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
 template <typename im_dt, typename col_dt>
 void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict im,
         void *__restrict imtr, col_dt *__restrict col, dim_t hs, dim_t hb,
-        dim_t ws, dim_t wb, const uint8_t *__restrict input_zp = nullptr);
+        dim_t ws, dim_t wb);
 
 template <typename T>
 void col2im_dt(
