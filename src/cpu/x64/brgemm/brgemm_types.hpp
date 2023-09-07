@@ -404,6 +404,9 @@ struct brgemm_kernel_params_t {
     size_t skip_accm = 0;
     int32_t zp_a_val = 1;
     const void *ptr_dst_scales = nullptr;
+
+    const void *ptr_wei_scales = nullptr;
+    const void *ptr_wei_zero_points = nullptr;
 };
 
 template <cpu_isa_t isa, typename Vmm>

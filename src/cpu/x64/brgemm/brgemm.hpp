@@ -164,7 +164,8 @@ status_t DNNL_API brgemm_kernel_destroy(brgemm_kernel_t *brg_kernel);
 ///
 void DNNL_API brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C,
-        void *scratch = nullptr);
+        void *scratch = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -190,7 +191,8 @@ void DNNL_API brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C,
-        void *scratch = nullptr);
+        void *scratch = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr);
 
 /// Execute BRGEMM kernel (brgemm_addr version)
 ///
@@ -215,7 +217,8 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 ///
 void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
         int bs, const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
-        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr);
+        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -244,7 +247,8 @@ void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
 void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
-        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr);
+        const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr);
 
 /// AMX utilities: Creates a palette based on BRGEMM descriptor
 ///

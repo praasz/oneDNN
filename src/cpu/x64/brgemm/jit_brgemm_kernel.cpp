@@ -160,6 +160,10 @@ private:
     const reg64_t reg_aux_zp_comp_b = reg_rdb_loop;
     const reg64_t reg_zp_c_values = reg_rdb_loop;
     const reg64_t reg_aux_zp_c_values = reg_rdb_loop;
+    const reg64_t reg_wei_scales = reg_rdb_loop;
+    const reg64_t reg_aux_wei_scales = reg_rdb_loop;
+    const reg64_t reg_wei_zp = reg_rdb_loop;
+    const reg64_t reg_aux_wei_zp = reg_rdb_loop;
 
     const reg64_t reg_aux_scales = reg_aux_B;
     const reg64_t reg_aux_dst_scales = reg_aux_B;
@@ -207,7 +211,11 @@ private:
     constexpr static int reg_zp_a_val_offs_ = 168;
     constexpr static int reg_do_comp_offs_ = 176;
     constexpr static int reg_dst_scales_offs_ = 184;
-    constexpr static int stack_space_needed_ = 192;
+    constexpr static int reg_wei_scales_offs_ = 192;
+    constexpr static int reg_aux_wei_scales_offs_ = 200;
+    constexpr static int reg_wei_zero_points_offs_ = 208;
+    constexpr static int reg_aux_wei_zero_points_offs_ = 216;
+    constexpr static int stack_space_needed_ = 224;
 
     bool is_ldb_loop_ = false;
     bool with_binary_non_scalar_bcast_ = false;
@@ -337,6 +345,8 @@ private:
     int bdb_compensation_offset(int bd_block2) const noexcept;
     int compensation_vpad_offset(int ld, int bd) const noexcept;
     int scales_offset(int ld, bool is_tail = false) const noexcept;
+    int wei_scales_offset(int ld, bool is_tail = false) const noexcept;
+    int wei_zp_offset(int ld, bool is_tail = false) const noexcept;
     int zp_comp_a_offset(int ld, bool is_tail = false) const noexcept;
     int zp_comp_a_vpad_offset(int ld, int bd) const noexcept;
     int bdb_zp_comp_a_offset(int bd_block2) const noexcept;
@@ -482,6 +492,20 @@ int jit_brgemm_kernel_t<isa, Wmm>::scales_offset(
         int ld, bool is_tail) const noexcept {
     return (is_tail) ? brg.is_oc_scale * sizeof(float) * brg.ldb_tail
                      : brg.is_oc_scale * sizeof(float) * ld * brg.ld_block;
+}
+
+template <cpu_isa_t isa, typename Wmm>
+int jit_brgemm_kernel_t<isa, Wmm>::wei_scales_offset(
+        int ld, bool is_tail) const noexcept {
+    return (is_tail) ? sizeof(float) * brg.ldb_tail
+                     : sizeof(float) * ld * brg.ld_block;
+}
+
+template <cpu_isa_t isa, typename Wmm>
+int jit_brgemm_kernel_t<isa, Wmm>::wei_zp_offset(
+        int ld, bool is_tail) const noexcept {
+    return (is_tail) ? sizeof(float) * brg.ldb_tail
+                     : sizeof(float) * ld * brg.ld_block;
 }
 
 template <cpu_isa_t isa, typename Wmm>
@@ -681,6 +705,17 @@ void jit_brgemm_kernel_t<isa, Wmm>::ldb_regs_shift(
                 (is_tail) ? scales_offset(1, true) : scales_offset(ld_block2));
         mov(ptr[rsp + reg_aux_scales_offs_], reg_aux_scales);
     }
+
+    if (brg.dt_a == data_type::f32 && brg.dt_b == data_type::u8) {
+        mov(reg_aux_wei_scales, ptr[rsp + reg_aux_wei_scales_offs_]);
+        add(reg_aux_wei_scales, (is_tail) ? wei_scales_offset(1, true) : wei_scales_offset(ld_block2));
+        mov(ptr[rsp + reg_aux_wei_scales_offs_], reg_aux_wei_scales);
+
+        mov(reg_aux_wei_zp, ptr[rsp + reg_aux_wei_zero_points_offs_]);
+        add(reg_aux_wei_zp, (is_tail) ? wei_zp_offset(1, true) : wei_zp_offset(ld_block2));
+        mov(ptr[rsp + reg_aux_wei_zero_points_offs_], reg_aux_wei_zp);
+    }
+
     if (brg.zp_type_a != brgemm_broadcast_t::none) {
         mov(reg_aux_zp_comp_a, ptr[rsp + reg_aux_zp_comp_a_offs_]);
         add(reg_aux_zp_comp_a,
@@ -741,6 +776,13 @@ void jit_brgemm_kernel_t<isa, Wmm>::copy_post_ops_stack_values_to_aux(
         mov(reg_zp_comp_b, ptr[rsp + reg_zp_comp_b_offs_]);
         mov(ptr[rsp + reg_aux_zp_comp_b_offs_], reg_zp_comp_b);
     }
+    if (brg.dt_a == data_type::f32 && brg.dt_b == data_type::u8) {
+        mov(reg_wei_scales, ptr[rsp + reg_wei_scales_offs_]);
+        mov(ptr[rsp + reg_aux_wei_scales_offs_], reg_wei_scales);
+
+        mov(reg_wei_zp, ptr[rsp + reg_wei_zero_points_offs_]);
+        mov(ptr[rsp + reg_aux_wei_zero_points_offs_], reg_wei_zp);
+    }
 }
 
 template <cpu_isa_t isa, typename Wmm>
@@ -797,6 +839,14 @@ void jit_brgemm_kernel_t<isa, Wmm>::read_params() {
     if (brg.zp_type_b != brgemm_broadcast_t::none) {
         mov(reg_zp_comp_b, ptr[param1 + GET_OFF(b_zp_compensations)]);
         mov(ptr[rsp + reg_zp_comp_b_offs_], reg_zp_comp_b);
+    }
+
+    if (brg.dt_a == data_type::f32 && brg.dt_b == data_type::u8) {
+        mov(reg_wei_scales, ptr[param1 + GET_OFF(ptr_wei_scales)]);
+        mov(ptr[rsp + reg_wei_scales_offs_], reg_wei_scales);
+
+        mov(reg_wei_zp, ptr[param1 + GET_OFF(ptr_wei_zero_points)]);
+        mov(ptr[rsp + reg_wei_zero_points_offs_], reg_wei_zp);
     }
 
     if (brg.zp_type_c != brgemm_broadcast_t::none) {
@@ -1762,7 +1812,10 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                 // Note: Assuming the tails are properly padded/blocked for
                 // avx2_vnni_2 with xf16 data type, as the B matrix is generally
                 // at least double-blocked.
-                if (brg.dt_b == data_type::f16) {
+                if (brg.dt_b == data_type::u8) {
+                    // uni_vpmovzxbd(vmm_load, addr);
+                    // uni_vcvtdq2ps(vmm_load, vmm_load);
+                } else if (brg.dt_b == data_type::f16) {
                     if (brg.isa_impl == avx2_vnni_2) {
                         if (rd % 2 == 0)
                             vcvtneeph2ps(vmm_load, addr);
@@ -1797,6 +1850,16 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
             }
         }
     } else {
+        auto reg_local_wei_scales = reg_bdb_loop;
+        auto reg_local_wei_zp = reg_ldb_loop;
+        if (brg.dt_a == data_type::f32 && brg.dt_b == data_type::u8) {
+            mov(ptr[rsp + reg_bdb_loop_offs_], reg_bdb_loop);
+            mov(ptr[rsp + reg_ldb_loop_offs_], reg_ldb_loop);
+
+            mov(reg_local_wei_scales, ptr[rsp + reg_aux_wei_scales_offs_]);
+            mov(reg_local_wei_zp, ptr[rsp + reg_aux_wei_zero_points_offs_]);
+        }
+
         for (int rd = 0; rd < rd_loop; rd += brg.rd_step) {
             int prefetch_count_B = 0;
             for (int ld = 0; ld < ld_block2; ld++) {
@@ -1806,7 +1869,15 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                 // Note: Assuming the tails are properly padded/blocked for
                 // avx2_vnni_2, as the B matrix is generally
                 // at least double-blocked.
-                if (brg.dt_b == data_type::f16) {
+                if (brg.dt_b == data_type::u8) {
+                    // uni_vxorps(bcst(), bcst(), bcst());
+                    uni_vpmovzxbd(vmm_load, addr);
+                    uni_vcvtdq2ps(vmm_load, vmm_load);
+                    uni_vmovups(bcst(), ptr[reg_local_wei_zp + ld * brg.ld_block * sizeof(float)]);
+                    uni_vsubps(vmm_load, vmm_load, bcst());
+                    uni_vmovups(bcst(), ptr[reg_local_wei_scales + ld * brg.ld_block * sizeof(float)]);
+                    uni_vmulps(vmm_load, vmm_load, bcst());
+                } else if (brg.dt_b == data_type::f16) {
                     if (brg.isa_impl == avx2_vnni_2) {
                         if (rd % 2 == 0)
                             vcvtneeph2ps(vmm_load, addr);
@@ -1858,6 +1929,11 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                         dot_product(vmm, load(ld), bcst());
                 }
             }
+        }
+
+        if (brg.dt_a == data_type::f32 && brg.dt_b == data_type::u8) {
+            mov(reg_ldb_loop, ptr[rsp + reg_ldb_loop_offs_]);
+            mov(reg_bdb_loop, ptr[rsp + reg_bdb_loop_offs_]);
         }
     }
 }

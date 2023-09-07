@@ -39,7 +39,8 @@ using namespace data_type;
 using namespace brgemm_utils;
 
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
-        const brgemm_batch_element_t *batch, void *ptr_C, void *scratch) {
+        const brgemm_batch_element_t *batch, void *ptr_C, void *scratch,
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -53,6 +54,8 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.do_apply_comp = 0;
     brgemm_p.skip_accm = 0;
     brgemm_p.BS = bs;
+    brgemm_p.ptr_wei_scales = ptr_wei_scales;
+    brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
 
     assert(brg_kernel);
 
@@ -61,7 +64,8 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
-        const brgemm_batch_element_t *batch, void *ptr_C, void *scratch) {
+        const brgemm_batch_element_t *batch, void *ptr_C, void *scratch,
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -75,13 +79,16 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.do_apply_comp = 0;
     brgemm_p.skip_accm = 0;
     brgemm_p.BS = bs;
+    brgemm_p.ptr_wei_scales = ptr_wei_scales;
+    brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     assert(brg_kernel);
     (*brg_kernel)(&brgemm_p);
 }
 
 void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
-        const brgemm_post_ops_data_t &post_ops_data, void *scratch) {
+        const brgemm_post_ops_data_t &post_ops_data, void *scratch,
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -108,6 +115,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.b_zp_compensations = post_ops_data.b_zp_compensations;
     brgemm_p.c_zp_values = post_ops_data.c_zp_values;
     brgemm_p.ptr_dst_scales = post_ops_data.dst_scales;
+    brgemm_p.ptr_wei_scales = ptr_wei_scales;
+    brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     assert(brg_kernel);
     (*brg_kernel)(&brgemm_p);
 }
@@ -115,7 +124,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
 void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
-        const brgemm_post_ops_data_t &post_ops_data, void *scratch) {
+        const brgemm_post_ops_data_t &post_ops_data, void *scratch,
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -142,6 +152,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.b_zp_compensations = post_ops_data.b_zp_compensations;
     brgemm_p.c_zp_values = post_ops_data.c_zp_values;
     brgemm_p.ptr_dst_scales = post_ops_data.dst_scales;
+    brgemm_p.ptr_wei_scales = ptr_wei_scales;
+    brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     assert(brg_kernel);
     (*brg_kernel)(&brgemm_p);
 }
@@ -182,8 +194,8 @@ status_t brgemm_desc_init(brgemm_t *brg, cpu_isa_t isa,
         return status::unimplemented;
 
     // Only avx512_core_amx kernel supports u8 weights.
-    if (!IMPLICATION(brg->dt_b == u8, brg->isa_impl == avx512_core_amx))
-        return status::unimplemented;
+    // if (!IMPLICATION(brg->dt_b == u8, brg->isa_impl == avx512_core_amx))
+    //     return status::unimplemented;
 
     CHECK(brgemm_blocking(brg));
 
