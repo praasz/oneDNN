@@ -60,7 +60,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             auto dst_dt = invariant_dst_md()->data_type;
             auto wei_dt = invariant_wei_md()->data_type;
             const bool is_int8 = one_of(src_dt, u8, s8);
-            const bool is_wei_decomp = one_of(src_dt, f32, bf16) && wei_dt == u8;
+            const bool is_wei_decomp = one_of(src_dt, f32, bf16) && one_of(wei_dt, u8, nf4);
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;
             auto skip_mask = skip_mask_t::post_ops | skip_mask_t::sum_dt;
@@ -113,7 +113,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
 
                 auto LDD = jbgp_.oc_without_padding;
                 CHECK(brgemm_desc_set_postops(
-                        &brg, attr(), &dst_md_, LDD, jbgp_.bia_dt, is_wei_decomp));
+                        &brg, attr(), &dst_md_, LDD, jbgp_.bia_dt, is_wei_decomp, &weights_md_));
 
                 if (are_post_ops_applicable && jbgp_.nthr_ic_b > 1) {
                     brgemm_attr_t brgattr;
@@ -206,24 +206,24 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     new jit_brgemm_decompress_kernel_t(&pd()->jbgp_)));
         }
 
-        if (pd()->jbgp_.weights_decompression) {
-            weights_decompression_compile_params_t jcp = {};
-            const int ic_internal_block = pd()->jbgp_.is_amx ? 2 : 1;
-            jcp.oc_size = pd()->jbgp_.oc_block * ic_internal_block;
-            jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
-            jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
-            jcp.decomp_buffer_dt = pd()->jbgp_.wei_dt;
+        // if (pd()->jbgp_.weights_decompression) {
+        //     weights_decompression_compile_params_t jcp = {};
+        //     const int ic_internal_block = pd()->jbgp_.is_amx ? 2 : 1;
+        //     jcp.oc_size = pd()->jbgp_.oc_block * ic_internal_block;
+        //     jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
+        //     jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+        //     jcp.decomp_buffer_dt = pd()->jbgp_.wei_dt;
 
-            if (mayiuse(avx512_core)) {
-                CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
-                        new jit_brgemm_weights_decompression_kernel_t<avx512_core>(jcp)));
-            } else if (mayiuse(avx2)) {
-                CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
-                        new jit_brgemm_weights_decompression_kernel_t<avx2>(jcp)));
-            } else {
-                return status::unimplemented;
-            }
-        }
+        //     if (mayiuse(avx512_core)) {
+        //         CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
+        //                 new jit_brgemm_weights_decompression_kernel_t<avx512_core>(jcp)));
+        //     } else if (mayiuse(avx2)) {
+        //         CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
+        //                 new jit_brgemm_weights_decompression_kernel_t<avx2>(jcp)));
+        //     } else {
+        //         return status::unimplemented;
+        //     }
+        // }
 
         if (pd()->jbgp_.use_buffer_a)
             CHECK(create_brgemm_copy_to_coarse(copy_src_kernel_, &pd()->jbgp_));

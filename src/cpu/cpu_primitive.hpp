@@ -67,7 +67,7 @@
             if (scales == nullptr) return status::invalid_arguments; \
             const auto scales_d = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | arg); \
             bool ok = scales_d.data_type() == data_type::f32 \
-                    && scales_d.ndims() == 1; \
+                    && (scales_d.ndims() == 1 || scales_d.ndims() == 2); \
             if (!ok) return status::invalid_arguments; \
             if (scales_d.dims()[0] == 1) { \
                 if (utils::one_of(arg, DNNL_ARG_DST, \

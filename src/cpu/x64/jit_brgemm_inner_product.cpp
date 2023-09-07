@@ -83,6 +83,13 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
     DEFINE_ZERO_POINTS_BUFFER_TYPED(wei_zero_points, DNNL_ARG_WEIGHTS, float);
 
+    const auto wei_scales_d = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS);
+    const auto wei_zero_points_d = ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS);
+    int wei_scales_group_num = wei_scales_d.ndims() > 1 ? wei_scales_d.dims()[1] : 1;
+    int wei_zero_points_group_num = wei_zero_points_d.ndims() > 1 ? wei_zero_points_d.dims()[1] : 1;
+    int wei_scales_group_size = div_up(jbgp.ic, wei_scales_group_num);
+    int wei_zero_points_group_size = div_up(jbgp.ic, wei_zero_points_group_num);
+
     const float *oscales = nullptr;
     if (jbgp.weights_decompression) {
         // weights decompression algorithm requires weights scales to be
@@ -90,20 +97,20 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         oscales = src_scales;
 
         // decompression algorithm assumes scales/zero_points buffers are aligned on oc_block size
-        if (jbgp.oc % jbgp.oc_block != 0) {
-            int ic_internal_block = jbgp.is_amx ? 2 : 1;
-            if (!pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values()) {
-                auto decomp_scales_buf = scratchpad.template get<float>(key_decompression_scales);
-                std::memcpy(decomp_scales_buf, wei_scales, ic_internal_block * jbgp.oc * sizeof(float));
-                wei_scales = decomp_scales_buf;
-            }
+        // if (jbgp.oc % jbgp.oc_block != 0) {
+        //     int ic_internal_block = jbgp.is_amx ? 2 : 1;
+        //     if (!pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values()) {
+        //         auto decomp_scales_buf = scratchpad.template get<float>(key_decompression_scales);
+        //         std::memcpy(decomp_scales_buf, wei_scales, ic_internal_block * wei_scales_group_num * jbgp.oc * sizeof(float));
+        //         wei_scales = decomp_scales_buf;
+        //     }
 
-            if (!pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS)) {
-                auto decomp_zp_buf = scratchpad.template get<float>(key_decompression_zero_points);
-                std::memcpy(decomp_zp_buf, wei_zero_points, ic_internal_block * jbgp.oc * sizeof(float));
-                wei_zero_points = decomp_zp_buf;
-            }
-        }
+        //     if (!pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS)) {
+        //         auto decomp_zp_buf = scratchpad.template get<float>(key_decompression_zero_points);
+        //         std::memcpy(decomp_zp_buf, wei_zero_points, ic_internal_block * wei_zero_points_group_size * jbgp.oc * sizeof(float));
+        //         wei_zero_points = decomp_zp_buf;
+        //     }
+        // }
     } else {
         oscales = precompute_scales(ctx.get_scratchpad_grantor(),
             src_scales, wei_scales, pd()->OC(), pd()->attr());
@@ -154,6 +161,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
     const dims_t ic_dims = {0, jbgp.ic_block, 0, 0, 0};
     const auto wei_ic_stride
             = types::data_type_size(jbgp.wei_dt) * weights_d.off_v(ic_dims);
+
+    int typesize_scale = jbgp.wei_dt == data_type::nf4 ? 2 : 1;
 
     const auto ker = [&](int ithr_oc_mb, int nthr_oc_mb, int ithr_ic, int osb,
                              int osb_s, int ocb, int ocb_s, int icc, int icc_s,
@@ -272,8 +281,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                                 + get_blk_off(src_d, jbgp.src_dt, n,
                                         ic + b * jbgp.K));
                 addr_batch[b].ptr.A = A_ptr;
-                const dim_t wei_offset = wei_cur_ocb
-                        + wei_ic_stride * (icb + b * ic_blocks_per_batch);
+                const dim_t wei_offset = (wei_cur_ocb
+                        + wei_ic_stride * (icb + b * ic_blocks_per_batch)) / typesize_scale;
                 if (jbgp.weights_compressed) {
                     const int16_t *compressed_tile_lengths_ptr
                             = reinterpret_cast<const int16_t *>(weights);
@@ -292,30 +301,33 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     dcomp_params.scratch_buf = decomp_buf;
                     (*brg_decomp_kernel_)(&dcomp_params);
                     addr_batch[b].ptr.B = decomp_buf;
-                } else if (jbgp.weights_decompression) {
-                    auto w_off = wei_offset * types::data_type_size(jbgp.orig_wei_dt) / types::data_type_size(jbgp.wei_dt);
-                    auto weights_ptr = reinterpret_cast<const uint8_t *>(&weights[w_off]);
+                // } else if (jbgp.weights_decompression) {
+                //     auto w_off = wei_offset * types::data_type_size(jbgp.src_dt) / types::data_type_size(jbgp.wei_dt);
+                //     auto weights_ptr = reinterpret_cast<const uint8_t *>(&weights[w_off]);
 
-                    const size_t decomp_buf_per_thr = jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
-                    auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr + wei_ic_stride * b * ic_blocks_per_batch;
+                //     const size_t decomp_buf_per_thr = jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
+                //     auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr + wei_ic_stride * b * ic_blocks_per_batch;
 
-                    const int ic_internal_block = is_amx ? 2 : 1;
-                    auto wei_zero_points_ptr = wei_zero_points + oc * ic_internal_block;
-                    auto wei_scales_ptr = wei_scales + oc * ic_internal_block;
+                //     const int ic_internal_block = is_amx ? 2 : 1;
+                //     auto wei_zero_points_ptr = wei_zero_points + oc * ic_internal_block;
+                //     auto wei_scales_ptr = wei_scales + oc * ic_internal_block;
 
-                    weights_decompression_runtime_params_t rt_params = {};
-                    rt_params.weights_ptr = weights_ptr;
-                    rt_params.decomp_buffer_ptr = decomp_buf;
-                    rt_params.scales_ptr = wei_scales_ptr;
-                    rt_params.zero_points_ptr = wei_zero_points_ptr;
-                    rt_params.ic_size = jbgp.ic_block * ic_blocks_per_batch / ic_internal_block;
-                    (*brg_weights_decomp_kernel_)(&rt_params);
+                //     weights_decompression_runtime_params_t rt_params = {};
+                //     rt_params.weights_ptr = weights_ptr;
+                //     rt_params.decomp_buffer_ptr = decomp_buf;
+                //     rt_params.scales_ptr = wei_scales_ptr;
+                //     rt_params.zero_points_ptr = wei_zero_points_ptr;
+                //     rt_params.ic_size = jbgp.ic_block * ic_blocks_per_batch / ic_internal_block;
+                //     (*brg_weights_decomp_kernel_)(&rt_params);
 
-                    addr_batch[b].ptr.B = decomp_buf;
+                //     addr_batch[b].ptr.B = decomp_buf;
                 } else {
                     addr_batch[b].ptr.B = weights + wei_offset;
                 }
             }
+
+            int wei_scales_offset = (ic % wei_scales_group_size) * wei_scales_d.dims()[0] + oc;
+            int wei_zero_points_offset = (ic % wei_zero_points_group_size) * wei_zero_points_d.dims()[0] + oc;
 
             auto ptr_D = dst + dst_off;
             auto ptr_C = use_c_buffer ? c_buffer : ptr_D;
@@ -338,10 +350,10 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
                 brgemm_kernel_execute_postops(brg_kernel, gemm_batch,
                         addr_batch, (void *)ptr_C, (void *)ptr_D, post_ops_data,
-                        scratch);
+                        scratch, &wei_scales[wei_scales_offset], &wei_zero_points[wei_zero_points_offset], ic);
             } else {
                 brgemm_kernel_execute(brg_kernel, gemm_batch, addr_batch,
-                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr);
+                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr, &wei_scales[wei_scales_offset], &wei_zero_points[wei_zero_points_offset], ic);
             }
         }
 
@@ -359,31 +371,34 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     + get_blk_off(src_d, jbgp.src_dt, n,
                             ic + ic_block * jbgp.ic_block);
             const dim_t wei_offset
-                    = wei_cur_ocb + wei_ic_stride * (icb + ic_block);
+                    = (wei_cur_ocb + wei_ic_stride * (icb + ic_block)) / typesize_scale;
 
-            if (jbgp.weights_decompression) {
-                auto w_off = wei_offset * types::data_type_size(jbgp.orig_wei_dt) / types::data_type_size(jbgp.wei_dt);
-                auto weights_ptr = reinterpret_cast<const uint8_t *>(&weights[w_off]);
+            // if (jbgp.weights_decompression) {
+            //     auto w_off = wei_offset * types::data_type_size(jbgp.orig_wei_dt) / types::data_type_size(jbgp.wei_dt);
+            //     auto weights_ptr = reinterpret_cast<const uint8_t *>(&weights[w_off]);
 
-                const size_t decomp_buf_per_thr = jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
-                auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr;
+            //     const size_t decomp_buf_per_thr = jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
+            //     auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr;
 
-                const int ic_internal_block = is_amx ? 2 : 1;
-                auto wei_zero_points_ptr = wei_zero_points + oc * ic_internal_block;
-                auto wei_scales_ptr = wei_scales + oc * ic_internal_block;
+            //     const int ic_internal_block = is_amx ? 2 : 1;
+            //     auto wei_zero_points_ptr = wei_zero_points + oc * ic_internal_block;
+            //     auto wei_scales_ptr = wei_scales + oc * ic_internal_block;
 
-                weights_decompression_runtime_params_t rt_params = {};
-                rt_params.weights_ptr = weights_ptr;
-                rt_params.decomp_buffer_ptr = decomp_buf;
-                rt_params.scales_ptr = wei_scales_ptr;
-                rt_params.zero_points_ptr = wei_zero_points_ptr;
-                rt_params.ic_size = (jbgp.ic - (ic + ic_block * jbgp.ic_block)) / ic_internal_block;
-                (*brg_weights_decomp_kernel_)(&rt_params);
+            //     weights_decompression_runtime_params_t rt_params = {};
+            //     rt_params.weights_ptr = weights_ptr;
+            //     rt_params.decomp_buffer_ptr = decomp_buf;
+            //     rt_params.scales_ptr = wei_scales_ptr;
+            //     rt_params.zero_points_ptr = wei_zero_points_ptr;
+            //     rt_params.ic_size = (jbgp.ic - (ic + ic_block * jbgp.ic_block)) / ic_internal_block;
+            //     (*brg_weights_decomp_kernel_)(&rt_params);
 
-                addr_batch[0].ptr.B = decomp_buf;
-            } else {
+            //     addr_batch[0].ptr.B = decomp_buf;
+            // } else {
                 addr_batch[0].ptr.B = weights + wei_offset;
-            }
+            // }
+
+            int wei_scales_offset = (ic % wei_scales_group_size) * wei_scales_d.dims()[0] + oc;
+            int wei_zero_points_offset = (ic % wei_zero_points_group_size) * wei_zero_points_d.dims()[0] + oc;
 
             auto brg_kernel_ic_tail = brg_kernels_[brg_ker_ic_tail_idx].get();
             auto ptr_D = dst + dst_off;
@@ -404,10 +419,10 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                         nullptr, false, 1, false, false, dst_scales};
 
                 brgemm_kernel_execute_postops(brg_kernel_ic_tail, 1, addr_batch,
-                        (void *)ptr_C, (void *)ptr_D, post_ops_data, scratch);
+                        (void *)ptr_C, (void *)ptr_D, post_ops_data, scratch, &wei_scales[oc], &wei_zero_points[oc], ic);
             } else {
                 brgemm_kernel_execute(brg_kernel_ic_tail, 1, addr_batch,
-                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr);
+                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr, &wei_scales[oc], &wei_zero_points[oc], ic);
             }
         }
     };
@@ -433,7 +448,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
     // not create parallel section at all. We do not limit num_threads
     // for 1 < work_amount < dnnl_get_max_threads() case to avoid potential
     // overhead on spawning different number of OMP threads from layer to layer.
-    const int num_threads
+    const int num_threads// = 1;
             = work_amount == 1 && jbgp.nthr_ic_b <= 1 ? 1 : jbgp.nthr;
     parallel(num_threads, [&](const int ithr, const int nthr) {
         int nthr_ic {1}, nthr_oc_mb {1}, ithr_ic {0}, ithr_oc_mb {0};
