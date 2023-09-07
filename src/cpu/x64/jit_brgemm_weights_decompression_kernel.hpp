@@ -33,6 +33,8 @@ namespace x64 {
 struct weights_decompression_compile_params_t {
     bool with_scales;
     bool with_zero_points;
+    bool broadcast_scales;
+    bool broadcast_zero_points;
     size_t oc_size;
     size_t ic_internal_size;
     data_type_t decomp_buffer_dt;
@@ -72,21 +74,32 @@ struct jit_brgemm_weights_decompression_kernel_t : public jit_weights_decompress
 private:
     using Vmm = typename utils::conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
 
+    static constexpr int n_vregs = cpu_isa_traits<isa>::n_vregs;
+
     void generate() override;
 
-    Vmm vmm_scales(int idx) {
-        assert(idx < unroll_factor);
+    Vmm vmm_scales(int ocb, int ic) {
+        assert(ocb < unroll_factor);
+        int idx = ocb * jcp_.ic_internal_size + ic;
         return Vmm(0 + idx);
     }
 
-    Vmm vmm_zero_points(int idx) {
-        assert(idx < unroll_factor);
-        return Vmm(unroll_factor + idx);
+    Vmm vmm_zero_points(int ocb, int ic) {
+        assert(ocb < unroll_factor);
+        return Vmm((unroll_factor + ocb) * jcp_.ic_internal_size + ic);
     }
 
-    Vmm vmm_weights(int idx) {
-        assert(idx < unroll_factor);
-        return Vmm(2*unroll_factor + idx);
+    Vmm vmm_weights(int ocb) {
+        assert(ocb < unroll_factor);
+        return Vmm(2 * unroll_factor * jcp_.ic_internal_size + ocb);
+    }
+
+    Vmm vmm_mask(int ic) {
+        return Vmm(n_vregs - ic - 2);
+    }
+
+    Vmm vmm_tmp() {
+        return Vmm(n_vregs - 1);
     }
 
     Xbyak::Reg64 reg_weights = r8;
@@ -94,10 +107,11 @@ private:
     Xbyak::Reg64 reg_scales = r10;
     Xbyak::Reg64 reg_zero_points = r11;
     Xbyak::Reg64 reg_ic_size = r12;
+    Xbyak::Reg64 reg_tmp = r13;
 
     size_t vec_size;
 
-    static constexpr int unroll_factor = isa == x64::avx512_core ? 8 : 4;
+    static constexpr int unroll_factor = 4;
 };
 
 } // namespace x64

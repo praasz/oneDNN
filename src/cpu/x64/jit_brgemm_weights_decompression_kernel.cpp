@@ -45,12 +45,57 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
     }
     mov(reg_ic_size, ptr[param1 + GET_OFF(ic_size)]);
 
+    if (jcp_.ic_internal_size > 1) {
+        static const int32_t mask_low[16] = {
+            0, 0, 1, 1, 2, 2, 3, 3,
+            4, 4, 5, 5, 6, 6, 7, 7
+        };
+        static const int32_t mask_high[16] = {
+            8, 8, 9, 9, 10, 10, 11, 11,
+            12, 12, 13, 13, 14, 14, 15, 15
+        };
+
+        mov(reg_tmp, (size_t)mask_low);
+        uni_vmovups(vmm_mask(0), ptr[reg_tmp]);
+        mov(reg_tmp, (size_t)mask_high);
+        uni_vmovups(vmm_mask(1), ptr[reg_tmp]);
+    }
+
     size_t oc_blocks_num = div_up(jcp_.oc_size, vec_size);
     for (size_t ocb = 0; ocb < oc_blocks_num; ocb++) {
-        if (jcp_.with_scales)
-            uni_vmovups(vmm_scales(ocb), ptr[reg_scales + ocb * vec_size * sizeof(float)]);
-        if (jcp_.with_zero_points)
-            uni_vmovups(vmm_zero_points(ocb), ptr[reg_zero_points + ocb * vec_size * sizeof(float)]);
+        if (jcp_.with_scales) {
+            if (jcp_.broadcast_scales) {
+                for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
+                    uni_vbroadcastss(vmm_scales(ocb, ic), ptr[reg_scales]);
+                }
+            } else {
+                if (jcp_.ic_internal_size > 1) {
+                    uni_vmovups(vmm_tmp(), ptr[reg_scales + ocb * vec_size * sizeof(float)]);
+                    for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
+                        vpermd(vmm_scales(ocb, ic), vmm_mask(ic), vmm_tmp());
+                    }
+                } else {
+                    uni_vmovups(vmm_scales(ocb, 0), ptr[reg_scales + ocb * vec_size * sizeof(float)]);
+                }
+            }
+        }
+
+        if (jcp_.with_zero_points) {
+            if (jcp_.broadcast_zero_points) {
+                for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
+                    uni_vbroadcastss(vmm_zero_points(ocb, ic), ptr[reg_zero_points]);
+                }
+            } else {
+                if (jcp_.ic_internal_size > 1) {
+                    uni_vmovups(vmm_tmp(), ptr[reg_zero_points + ocb * vec_size * sizeof(float)]);
+                    for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
+                        vpermd(vmm_zero_points(ocb, ic), vmm_mask(ic), vmm_tmp());
+                    }
+                } else {
+                    uni_vmovups(vmm_zero_points(ocb, 0), ptr[reg_zero_points + ocb * vec_size * sizeof(float)]);
+                }
+            }
+        }
     }
 
     Xbyak::Label ic_loop_label;
@@ -64,31 +109,33 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
         jl(ic_end_label, T_NEAR);
 
         for (size_t ocb = 0; ocb < oc_blocks_num; ocb++) {
-            uni_vpmovzxbd(vmm_weights(ocb), ptr[reg_weights + ocb * vec_size * sizeof(uint8_t)]);
-            uni_vcvtdq2ps(vmm_weights(ocb), vmm_weights(ocb));
-            if (jcp_.with_zero_points)
-                uni_vsubps(vmm_weights(ocb), vmm_weights(ocb), vmm_zero_points(ocb));
-            if (jcp_.with_scales)
-                uni_vmulps(vmm_weights(ocb), vmm_weights(ocb), vmm_scales(ocb));
+                for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
+                uni_vpmovzxbd(vmm_weights(ocb), ptr[reg_weights + (ocb * jcp_.ic_internal_size + ic) * vec_size * sizeof(uint8_t)]);
+                uni_vcvtdq2ps(vmm_weights(ocb), vmm_weights(ocb));
+                if (jcp_.with_zero_points)
+                    uni_vsubps(vmm_weights(ocb), vmm_weights(ocb), vmm_zero_points(ocb, ic));
+                if (jcp_.with_scales)
+                    uni_vmulps(vmm_weights(ocb), vmm_weights(ocb), vmm_scales(ocb, ic));
 
-            switch (jcp_.decomp_buffer_dt) {
-                case data_type::f32: {
-                    uni_vmovups(ptr[reg_decomp_buffer + ocb * vec_size * decomp_buf_dt_size], vmm_weights(ocb));
-                    break;
+                switch (jcp_.decomp_buffer_dt) {
+                    case data_type::f32: {
+                        uni_vmovups(ptr[reg_decomp_buffer + (ocb * jcp_.ic_internal_size + ic) * vec_size * decomp_buf_dt_size], vmm_weights(ocb));
+                        break;
+                    }
+                    case data_type::bf16: {
+                        Ymm ymm_weights = Ymm(vmm_weights(ocb).getIdx());
+                        vcvtneps2bf16(ymm_weights, vmm_weights(ocb));
+                        vmovdqu16(ptr[reg_decomp_buffer + (ocb * jcp_.ic_internal_size + ic) * vec_size * decomp_buf_dt_size], ymm_weights);
+                        break;
+                    }
+                    default: assert(!"unsupported data type");
                 }
-                case data_type::bf16: {
-                    Ymm ymm_weights = Ymm(vmm_weights(ocb).getIdx());
-                    vcvtneps2bf16(ymm_weights, vmm_weights(ocb));
-                    vmovdqu16(ptr[reg_decomp_buffer + ocb * vec_size * decomp_buf_dt_size], ymm_weights);
-                    break;
-                }
-                default: assert(!"unsupported data type");
             }
         }
 
         dec(reg_ic_size);
-        add(reg_weights, sizeof(uint8_t) * jcp_.oc_size);
-        add(reg_decomp_buffer, decomp_buf_dt_size * jcp_.oc_size);
+        add(reg_weights, sizeof(uint8_t) * jcp_.oc_size * jcp_.ic_internal_size);
+        add(reg_decomp_buffer, decomp_buf_dt_size * jcp_.oc_size * jcp_.ic_internal_size);
 
         jmp(ic_loop_label, T_NEAR);
     }
