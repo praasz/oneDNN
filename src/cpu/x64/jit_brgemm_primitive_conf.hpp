@@ -88,8 +88,10 @@ struct jit_brgemm_primitive_conf_t {
             = brgemm_kernel_prefetching_t::brgemm_prf_default;
     bool with_dst_scales;
 
-    data_type_t orig_wei_dt;
     bool weights_decompression;
+    bool with_grouped_weights_decompression;
+    size_t wei_decomp_scales_buffer_size;
+    size_t wei_decomp_zero_points_buffer_size;
 };
 
 } // namespace x64

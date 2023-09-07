@@ -242,8 +242,16 @@ struct runtime_scales_t : public c_compatible {
         return status::success;
     }
 
+    status_t set(const dims_t dims, int ndims) {
+        is_set_ = true;
+        ndims_ = ndims;
+        utils::array_copy(dims_, dims, ndims_);
+        return status::success;
+    }
+
     bool operator==(const runtime_scales_t &rhs) const {
-        return mask_ == rhs.mask_ && is_set_ == rhs.is_set_;
+        return mask_ == rhs.mask_ && is_set_ == rhs.is_set_ &&
+               ndims_ == rhs.ndims_ && utils::array_cmp(dims_, rhs.dims_, ndims_);
     }
 
     bool has_default_values() const { return !is_set_; }
@@ -259,6 +267,9 @@ struct runtime_scales_t : public c_compatible {
     // Hide `mask_` under `private:` to force interface usage.
     int mask_ = 0;
     bool is_set_ = false;
+
+    int ndims_ = 0;
+    dnnl::impl::dims_t dims_;
 };
 
 struct arg_scales_t : public c_compatible {
@@ -294,6 +305,10 @@ struct arg_scales_t : public c_compatible {
     status_t set(int arg, int mask) {
         if (!check_arg(arg)) return status::invalid_arguments;
         return scales_[arg].set(mask);
+    }
+    status_t set(int arg, const dims_t dims, int ndims) {
+        if (!check_arg(arg)) return status::invalid_arguments;
+        return scales_[arg].set(dims, ndims);
     }
 
     status_t get(int arg, int *mask, bool *is_set) const {
@@ -373,11 +388,25 @@ struct zero_points_t : public c_compatible {
     int get(int arg) const; // Returns 0 if dimension is unset
 
     status_t set(int arg, int mask);
+    status_t set(int arg, const dims_t dims, int ndims);
     status_t set(int arg) { return set(arg, 0); }
+
+    const dims_t & get_dims(int /*arg*/) const {
+        return dims_wei;
+    }
+    int get_ndims(int arg) const {
+        switch (arg) {
+            case DNNL_ARG_WEIGHTS: return ndims_wei; break;
+            default: return 0;
+        }
+    }
 
 private:
     bool is_set_src = false, is_set_wei = false, is_set_dst = false;
     int mask_src = 0, mask_wei = 0, mask_dst = 0;
+
+    int ndims_wei = 0;
+    dnnl::impl::dims_t dims_wei;
 
     int get_mask(int arg) const {
         int mask = 0;

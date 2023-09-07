@@ -56,7 +56,7 @@ struct reorder_impl_key_t {
     }
 
 private:
-    enum { MAX_DT_NUM = 10 };
+    enum { MAX_DT_NUM = 12 };
     size_t value() const {
         return ((size_t)ndims * MAX_DT_NUM + (size_t)src_dt) * MAX_DT_NUM
                 + (size_t)dst_dt;
@@ -80,6 +80,9 @@ extern const impl_list_map_t &regular_s32_impl_list_map();
 extern const impl_list_map_t &regular_s8_impl_list_map();
 extern const impl_list_map_t &regular_u8_impl_list_map();
 extern const impl_list_map_t &regular_bin_impl_list_map();
+extern const impl_list_map_t &regular_nf4_impl_list_map();
+extern const impl_list_map_t &regular_s4_impl_list_map();
+extern const impl_list_map_t &regular_u4_impl_list_map();
 
 /* conv reorders w/ compensation */
 extern const impl_list_map_t &comp_f32_s8_impl_list_map();
