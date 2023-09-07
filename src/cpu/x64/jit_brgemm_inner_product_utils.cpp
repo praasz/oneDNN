@@ -336,7 +336,9 @@ int jit_brgemm_ip_conf_t::get_adjusted_oc_block() const {
     const bool is_f32_compute = !jbgp.is_bf32
             && everyone_is(f32, jbgp.src_dt, jbgp.wei_dt, jbgp.dst_dt);
     const bool is_avx512 = is_superset(jbgp.isa, avx512_core);
+    const bool is_avx2 = is_superset(jbgp.isa, avx2);
     const bool is_f32_compute_avx512 = is_f32_compute && is_avx512;
+    const bool is_f32_compute_avx2 = !is_avx512 && is_avx2 && is_f32_compute;
     if (jbgp.is_amx && jbgp.wei_dt == bf16 && !jbgp.is_bf32) {
         auto block_cnt_env = std::getenv("BLOCK_CNT");
         auto weight_size_env= std::getenv("WEIGHT_SIZE");
@@ -344,6 +346,15 @@ int jit_brgemm_ip_conf_t::get_adjusted_oc_block() const {
                 int block_cnt = atoi(block_cnt_env);
                 auto weight_size_MB = atoi(weight_size_env);
                 if (jbgp.ic * jbgp.oc * 2 >= weight_size_MB * (1 << 20))
+                        return block_cnt;
+        }
+    } else if (is_f32_compute_avx512 || is_f32_compute_avx2) {
+        auto block_cnt_env = std::getenv("BLOCK_CNT");
+        auto weight_size_env= std::getenv("WEIGHT_SIZE");
+        if (block_cnt_env && weight_size_env) {
+                int block_cnt = atoi(block_cnt_env);
+                auto weight_size_MB = atoi(weight_size_env);
+                if (jbgp.ic * jbgp.oc * 4 >= weight_size_MB * (1 << 20))
                         return block_cnt;
         }
     }
