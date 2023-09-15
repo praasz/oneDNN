@@ -35,6 +35,21 @@
 #define __BUILD_GEMM_AVX2 __BUILD_GEMM_AVX512 || BUILD_GEMM_AVX2
 #define __BUILD_GEMM_SSE41 __BUILD_GEMM_AVX2 || BUILD_GEMM_SSE41
 #define __BUILD_GEMM_NONE BUILD_GEMM_KERNELS_NONE
+
+#if __BUILD_GEMM_AVX512
+#define avx512_gemm_available() mayiuse(avx512_core)
+#define avx512_amx_gemm_available() mayiuse(avx512_core_amx)
+#define avx512_bf16_gemm_available() mayiuse(avx512_core_bf16)
+#define avx512_vnni_gemm_available() mayiuse(avx512_core_vnni)
+#define avx512_bf16_ymm_gemm_available() mayiuse(avx512_core_bf16_ymm)
+#else
+#define avx512_gemm_available() false
+#define avx512_amx_gemm_available() false
+#define avx512_bf16_gemm_available() false
+#define avx512_vnni_gemm_available() false
+#define avx512_bf16_ymm_gemm_available() false
+#endif
+
 #else
 #define __BUILD_GEMM_AMX 0
 #define __BUILD_GEMM_AVX512 0
