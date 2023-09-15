@@ -241,7 +241,7 @@ dnnl_status_t gemm_s8x8s32(const char *transa, const char *transb,
     if (*M == 0 || *N == 0 || *K == 0) return dnnl_success;
 
 #if DNNL_X64 && !__BUILD_GEMM_NONE
-    bool use_jit = mayiuse(avx512_core);
+    bool use_jit = avx512_gemm_available();
     bool use_s8u8 = true
             && utils::everyone_is(0, *ao, *bo) // so far a requirement
             && IMPLICATION(USE_MKL_IGEMM == 0, mayiuse(sse41));
@@ -299,7 +299,7 @@ dnnl_status_t gemm_bf16bf16f32(const char *transa, const char *transb,
     bfloat16_t *dummy_bo = nullptr;
     float *dummy_co = nullptr;
 
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         auto status = gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
                 (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
                 ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);

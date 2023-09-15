@@ -74,7 +74,7 @@ template <typename T>
 int get_vector_length() {
     int v_bytes;
 
-    if (mayiuse(avx512_core))
+    if (avx512_gemm_available())
         v_bytes = cpu_isa_traits<avx512_core>::vlen;
     else if (mayiuse(avx))
         v_bytes = cpu_isa_traits<avx>::vlen;
@@ -389,7 +389,7 @@ void gemm_kernel(dim_t m, dim_t n, const dim_t k, const float alpha,
     constexpr bool is_int8 = utils::one_of(
             data_traits<a_type>::data_type, data_type::s8, data_type::u8);
     constexpr bool is_f32 = data_traits<a_type>::data_type == data_type::f32;
-    bool is_int8_amx = is_int8 && mayiuse(avx512_core_amx);
+    bool is_int8_amx = is_int8 && avx512_amx_gemm_available();
 
     dim_t m_stk = col_offset_ws ? 1 : m;
     dim_t n_stk = row_offset_ws ? 1 : n;
@@ -533,8 +533,8 @@ static dnnl_status_t gemm_kernel_driver(int ithr, dim_t m, dim_t n, dim_t k,
     constexpr bool is_int8 = utils::one_of(
             data_traits<a_type>::data_type, data_type::s8, data_type::u8);
     constexpr bool is_bf16 = data_traits<a_type>::data_type == data_type::bf16;
-    bool is_int8_amx = is_int8 && mayiuse(avx512_core_amx);
-    bool is_bf16_amx = is_bf16 && mayiuse(avx512_core_amx);
+    bool is_int8_amx = is_int8 && avx512_amx_gemm_available();
+    bool is_bf16_amx = is_bf16 && avx512_amx_gemm_available();
     bool is_amx = is_int8_amx || is_bf16_amx;
 
     const std::shared_ptr<const gemm_pack_storage_t> &a_packed = arg->a_packed;
@@ -811,8 +811,8 @@ static dnnl_status_t kernel_driver_parallel_acopiedbcopy(int ithr, dim_t m,
     constexpr bool is_int8 = utils::one_of(
             data_traits<a_type>::data_type, data_type::s8, data_type::u8);
     constexpr bool is_bf16 = data_traits<a_type>::data_type == data_type::bf16;
-    bool is_int8_amx = is_int8 && mayiuse(avx512_core_amx);
-    bool is_bf16_amx = is_bf16 && mayiuse(avx512_core_amx);
+    bool is_int8_amx = is_int8 && avx512_amx_gemm_available();
+    bool is_bf16_amx = is_bf16 && avx512_amx_gemm_available();
     bool is_amx = is_int8_amx || is_bf16_amx;
 
     // B buffer needs to be large due to zero-padding.
@@ -1048,7 +1048,7 @@ static inline bool nocopy_checker(
 
     if (arg->a_packed || arg->b_packed)
         return false;
-    else if (mayiuse(avx512_core))
+    else if (avx512_gemm_available())
         return nocopy_checker_avx512(
                 nthr, transa, transb, m, n, k, lda, ldb, ldc);
     else
@@ -1086,21 +1086,21 @@ static inline void set_thread_opts_nopack(int nthrs, int nthrs_spawn,
     bool condition_2D_bsrc = false;
     if (isSgemm) {
         // If m is large and n is small then do 1D partitioning for AVX2.
-        if (!mayiuse(avx512_core) && n <= N2D_MAX && (m >= nthrs * M2D_MIN))
+        if (!avx512_gemm_available() && n <= N2D_MAX && (m >= nthrs * M2D_MIN))
             condition_2D_bsrc = false;
         else
             condition_2D_bsrc
                     = ((n > nthrs * N2D_MAX) || (n <= nthrs * N2D_MAX / 2))
                     && (m >= 2 * M2D_MIN);
     } else {
-        int scale = mayiuse(avx512_core) ? nthrs : 20;
+        int scale = avx512_gemm_available() ? nthrs : 20;
         condition_2D_bsrc = (256 * m > scale * n) && (scale * m < 256 * n);
     }
 
     // TODO Check if we should use k-partitioning.
 
     int condition_1D_copya = false;
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         const dim_t thresh = isSgemm ? N2D_MAX / 4 : 68;
         if (m >= 1000 && (n >= nthrs * thresh)) {
             condition_2D_bsrc = false;
@@ -1118,7 +1118,7 @@ static inline void set_thread_opts_nopack(int nthrs, int nthrs_spawn,
     // TODO: the reasons seems to be in copy_sum_bx routines. At least,
     //       after simple optimization of copy_sum_ax for avx512, similar
     //       restriction on offset B became unnecessary. Revisit.
-    if (is_int8 && arg->ao != 0 && (arg->bo != 0 || mayiuse(avx512_core))) {
+    if (is_int8 && arg->ao != 0 && (arg->bo != 0 || avx512_gemm_available())) {
         condition_2D_bsrc = false;
         condition_1D_copya = true;
     }
@@ -1161,7 +1161,7 @@ static inline void set_thread_opts_nopack(int nthrs, int nthrs_spawn,
             } else if ((n <= 64 || n >= 256)) {
                 while (((nthrs_n > 1) && (n / nthrs_n < arg->un)
                                && (m / nthrs_m >= 2 * arg->um)
-                               && mayiuse(avx512_core))
+                               && avx512_gemm_available())
                         || ((nthrs_n % 2 == 0)
                                 && (n / nthrs > N2D_MAX
                                         || n / nthrs_n <= N2D_MAX / 2)
@@ -1289,7 +1289,7 @@ static inline void set_thread_opts_pack(int nthrs,
     choose_k_blocking();
 
     // Choose m/n blocking.
-    auto min_mblk = mayiuse(avx512_core) ? (MBLK / 2) : arg->um;
+    auto min_mblk = avx512_gemm_available() ? (MBLK / 2) : arg->um;
     min_mblk = do_m_blocking ? min_mblk : m;
     min_mblk = do_m_blocking_only ? arg->um : min_mblk;
     auto min_nblk = do_n_blocking ? NBLK / 2 : n;
@@ -1343,7 +1343,7 @@ static inline int set_thread_opts(int nthrs, int nthrs_spawn,
         dim_t BK = 0;
         auto m = arg->m, n = arg->n, k = arg->k;
 
-        if (mayiuse(avx512_core)) {
+        if (avx512_gemm_available()) {
             cpu::gemm_utils::calc_nthr_nocopy_avx512_common(m, n, k, nthrs,
                     &nthrs_m, &nthrs_n, &nthrs_k, &BM, &BN, &BK);
         } else {
@@ -1417,8 +1417,8 @@ static dnnl_status_t parallel_a_copy(const int ithr, const int nthrs,
     constexpr bool is_int8 = utils::one_of(
             data_traits<a_type>::data_type, data_type::s8, data_type::u8);
     constexpr bool is_bf16 = data_traits<a_type>::data_type == data_type::bf16;
-    bool is_int8_amx = is_int8 && mayiuse(avx512_core_amx);
-    bool is_bf16_amx = is_bf16 && mayiuse(avx512_core_amx);
+    bool is_int8_amx = is_int8 && avx512_amx_gemm_available();
+    bool is_bf16_amx = is_bf16 && avx512_amx_gemm_available();
     bool is_amx = is_int8_amx || is_bf16_amx;
 
     const std::shared_ptr<const gemm_pack_storage_t> &a_packed = arg->a_packed;
@@ -1574,7 +1574,7 @@ static inline void adjust_thread_count(dim_t m, dim_t n, dim_t k, int *nthrs) {
 
     const bool is_f32 = data_traits<T>::data_type == data_type::f32;
 
-    const bool is_avx512 = mayiuse(avx512_core);
+    const bool is_avx512 = avx512_gemm_available();
     const bool is_avx = mayiuse(avx);
     const bool is_only_avx2 = mayiuse(avx2) && !is_avx512;
 
@@ -1663,7 +1663,7 @@ static dnnl_status_t call_no_copy_sgemm(
         auto transb_char = (arg->transb != do_trans) ? "N" : "T";
 #endif
 
-        if (mayiuse(avx512_core)) {
+        if (avx512_gemm_available()) {
 #if __BUILD_GEMM_AVX512
             return jit_avx512_common_gemm_f32(nthrs, transa_char, transb_char,
                     &arg->m, &arg->n, &arg->k, &arg->alpha, (float *)arg->a,
@@ -1937,7 +1937,7 @@ static dnnl_status_t gemm_threading_driver(
                                 == data_type::f32);
                         assert(arg->packing == pack_type::none);
 
-                        if (mayiuse(avx512_core)) {
+                        if (avx512_gemm_available()) {
 #if __BUILD_GEMM_AVX512
                             thread_arg[ithr].result = avx512_common_gemm_f32::
                                     sgemm_nocopy_driver(
@@ -2014,7 +2014,7 @@ dnnl_status_t gemm_driver(const char *transA, const char *transB,
     // gemm_driver supports bfloat16 gemm for Intel AVX512 and
     // Intel AVX512 BF16.
     assert(IMPLICATION(data_traits<a_type>::data_type == data_type::bf16,
-            mayiuse(avx512_core) && !force_nocopy));
+            avx512_gemm_available() && !force_nocopy));
 
     // gemm_driver supports 8-bit integer Intel AVX512, Intel AVX2, Intel AVX,
     // Intel SSE4.1 and Intel DL Boost.

@@ -35,6 +35,21 @@
 #define __BUILD_GEMM_AVX2 __BUILD_GEMM_AVX512 || BUILD_GEMM_AVX2
 #define __BUILD_GEMM_SSE41 __BUILD_GEMM_AVX2 || BUILD_GEMM_SSE41
 #define __BUILD_GEMM_NONE BUILD_GEMM_KERNELS_NONE
+
+#if __BUILD_GEMM_AVX512
+#define avx512_gemm_available() mayiuse(avx512_core)
+#define avx512_amx_gemm_available() mayiuse(avx512_core_amx)
+#define avx512_bf16_gemm_available() mayiuse(avx512_core_bf16)
+#define avx512_vnni_gemm_available() mayiuse(avx512_core_vnni)
+#define avx512_bf16_ymm_gemm_available() mayiuse(avx512_core_bf16_ymm)
+#else
+#define avx512_gemm_available() false
+#define avx512_amx_gemm_available() false
+#define avx512_bf16_gemm_available() false
+#define avx512_vnni_gemm_available() false
+#define avx512_bf16_ymm_gemm_available() false
+#endif
+
 #else
 #define __BUILD_GEMM_AMX 0
 #define __BUILD_GEMM_AVX512 0
@@ -91,9 +106,9 @@ dnnl_status_t gemm_bf16bf16f32(const char *transa, const char *transb,
 #if !defined(USE_MKL_IGEMM) && defined(DNNL_X64)
 #define IGEMM_S8U8S32_ISA_STR \
     JIT_IMPL_NAME_HELPER(IGEMM_S8U8S32_IMPL_STR ":", \
-            mayiuse(avx512_core_vnni) \
+            avx512_vnni_gemm_available() \
                     ? avx512_core_vnni \
-                    : (mayiuse(avx512_core) ? avx512_core : isa_undef), \
+                    : (avx512_gemm_available() ? avx512_core : isa_undef), \
             "")
 #else
 #define IGEMM_S8U8S32_ISA_STR IGEMM_S8U8S32_IMPL_STR
