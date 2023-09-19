@@ -39,7 +39,12 @@
 // For checking if fp16 isa is supported on the platform
 #include "arm_compute/core/CPP/CPPTypes.h"
 // For setting the number of threads for ACL
-#include "src/common/cpuinfo/CpuInfo.h"
+// #include "src/common/cpuinfo/CpuInfo.h"
+namespace arm_compute {
+namespace cpuinfo {
+uint32_t num_threads_hint();
+} // namespace cpuinfo
+} // namespace arm_compute
 #endif
 
 // For DNNL_X64 build we compute the timestamp using rdtsc. Use std::chrono for
