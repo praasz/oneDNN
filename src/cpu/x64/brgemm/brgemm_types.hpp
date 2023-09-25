@@ -275,6 +275,10 @@ struct brgemm_t {
     const primitive_attr_t *attr = nullptr;
     const memory_desc_t *dst_md = nullptr;
 
+    bool with_wei_decomp = false;
+    bool with_wei_decomp_scales = false;
+    bool with_wei_decomp_zero_points = false;
+
     bool is_row_major() const {
         assert(layout != brgemm_layout_undef);
         return layout == brgemm_row_major;

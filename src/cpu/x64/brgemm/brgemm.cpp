@@ -388,6 +388,12 @@ status_t brgemm_desc_set_postops(brgemm_t *brg, const primitive_attr_t *attr,
             || (brg->is_bf16_emu && !brg->is_dgmm))
         CHECK(brgemm_blocking(brg));
 
+    brg->with_wei_decomp = brg->dt_a == data_type::f32 && brg->dt_b == data_type::u8;
+    if (brg->with_wei_decomp) {
+        brg->with_wei_decomp_scales = !attr->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
+        brg->with_wei_decomp_zero_points = !attr->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+    }
+
     return status::success;
 }
 
