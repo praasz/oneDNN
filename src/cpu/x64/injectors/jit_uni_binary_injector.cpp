@@ -686,7 +686,8 @@ void jit_uni_binary_injector_t<isa, Vmm>::append_oc_offset(
                     register_guard {is_out_reg ? utils::one_of(
                                             it_out_reg->second, rax, rdx, r8)
                                                : false,
-                            host_, {it_out_reg->second}};
+                            host_,
+                            {is_out_reg ? it_out_reg->second : Xbyak::Reg64()}};
 
             switch (layout) {
                 case injector_utils::layout_t::ncsp:
@@ -916,7 +917,8 @@ void jit_uni_binary_injector_t<isa, Vmm>::append_mb_sp_offset(
                                     ? utils::one_of(it_out_reg->second, rax,
                                             rdx, r8, r9)
                                     : false,
-                            host_, {it_out_reg->second}};
+                            host_,
+                            {is_out_reg ? it_out_reg->second : Xbyak::Reg64()}};
 
             switch (layout) {
                 case injector_utils::layout_t::ncsp:
@@ -1197,7 +1199,8 @@ void jit_uni_binary_injector_t<isa, Vmm>::append_mb_w_offset(
                                     ? utils::one_of(it_out_reg->second, rax,
                                             rdx, r8, r9)
                                     : false,
-                            host_, {it_out_reg->second}};
+                            host_,
+                            {is_out_reg ? it_out_reg->second : Xbyak::Reg64()}};
 
             switch (layout) {
                 case injector_utils::layout_t::ncsp:
@@ -1505,7 +1508,8 @@ void jit_uni_binary_injector_t<isa, Vmm>::append_w_offset(
                     register_guard {is_out_reg ? utils::one_of(
                                             it_out_reg->second, rax, rdx, r8)
                                                : false,
-                            host_, {it_out_reg->second}};
+                            host_,
+                            {is_out_reg ? it_out_reg->second : Xbyak::Reg64()}};
 
             switch (layout) {
                 case injector_utils::layout_t::ncsp:
