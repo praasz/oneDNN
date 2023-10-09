@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021-2022 Arm Ltd. and affiliates
+* Copyright 2021-2023 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace acl {
+namespace aarch64 {
 
 struct acl_matmul_obj_t {
     arm_compute::NEGEMM gemm;
@@ -32,8 +32,8 @@ struct acl_matmul_obj_t {
     arm_compute::NETranspose transB;
     arm_compute::Tensor src_tensor;
     arm_compute::Tensor src_acc_tensor;
-    arm_compute::Tensor wei_tensor;
     arm_compute::Tensor wei_acc_tensor;
+    arm_compute::Tensor wei_tensor;
     arm_compute::Tensor dst_tensor;
 };
 
@@ -43,24 +43,28 @@ struct acl_matmul_conf_t {
     // If this is true, the result of the matmul goes into a temporarily
     // allocated ACL tensor to be accumulated into the oneDNN dst during postops
     bool use_dst_acc;
-    arm_compute::TensorInfo src_info;
+    arm_compute::TensorInfo src_tensor_info;
     arm_compute::TensorInfo src_acc_info;
-    arm_compute::TensorInfo wei_info;
     arm_compute::TensorInfo wei_acc_info;
-    arm_compute::TensorInfo dst_info;
+    arm_compute::TensorInfo wei_tensor_info;
+    arm_compute::TensorInfo dst_tensor_info;
     arm_compute::GEMMInfo gemm_info;
     float alpha;
 };
 
 namespace acl_matmul_utils {
 
-status_t init_conf_matmul(acl_matmul_conf_t &amp, memory_desc_t &src_md,
-        memory_desc_t &wei_md, memory_desc_t &dst_md, const matmul_desc_t &md,
-        const primitive_attr_t &attr);
+status_t init_conf_matmul_fixed_format(acl_matmul_conf_t &amp,
+        memory_desc_t &src_md, memory_desc_t &wei_md, memory_desc_t &dst_md,
+        const matmul_desc_t &md, const primitive_attr_t &attr);
+
+status_t init_conf_matmul_non_fixed_format(acl_matmul_conf_t &amp,
+        memory_desc_t &src_md, memory_desc_t &wei_md, memory_desc_t &dst_md,
+        const matmul_desc_t &md, const primitive_attr_t &attr);
 
 } // namespace acl_matmul_utils
 
-} // namespace acl
+} // namespace aarch64
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl

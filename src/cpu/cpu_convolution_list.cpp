@@ -70,7 +70,7 @@ using namespace dnnl::impl::cpu::aarch64;
 #include "cpu/acl/acl_gemm_convolution.hpp"
 #include "cpu/acl/acl_indirect_gemm_convolution.hpp"
 #include "cpu/acl/acl_depthwise_convolution.hpp"
-#include "cpu/acl/acl_winograd_convolution.hpp"
+#include "cpu/aarch64/acl_winograd_convolution.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif
 

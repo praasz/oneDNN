@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2022 Arm Ltd. and affiliates
+* Copyright 2020-2023 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -24,14 +24,14 @@
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace acl {
+namespace aarch64 {
 
 struct acl_wino_resource_t : public resource_t {
     acl_wino_resource_t()
         : acl_wino_obj_(utils::make_unique<
-                acl_obj_t<arm_compute::NEWinogradConvolutionLayer>>()) {}
+                        acl::acl_obj_t<arm_compute::NEWinogradConvolutionLayer>>()) {}
 
-    status_t configure(const acl_conv_conf_t &acp) {
+    status_t configure(const acl::acl_conv_conf_t &acp) {
         if (!acl_wino_obj_) return status::out_of_memory;
 
         // Init Compute Library tensors based on info from descriptor
@@ -54,14 +54,14 @@ struct acl_wino_resource_t : public resource_t {
         return status::success;
     }
 
-    acl_obj_t<arm_compute::NEWinogradConvolutionLayer> &get_acl_obj() const {
+    acl::acl_obj_t<arm_compute::NEWinogradConvolutionLayer> &get_acl_obj() const {
         return *acl_wino_obj_;
     }
 
     DNNL_DISALLOW_COPY_AND_ASSIGN(acl_wino_resource_t);
 
 private:
-    std::unique_ptr<acl_obj_t<arm_compute::NEWinogradConvolutionLayer>>
+    std::unique_ptr<acl::acl_obj_t<arm_compute::NEWinogradConvolutionLayer>>
             acl_wino_obj_;
 }; // acl_wino_resource_t
 
@@ -90,9 +90,11 @@ struct acl_wino_convolution_fwd_t : public primitive_t {
                             alg_kind::convolution_winograd)
                     && utils::one_of(true, is_fp16_ok, is_fp32_ok)
                     && !has_zero_dim_memory();
+
+            ok = ok && DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL;
             if (!ok) return status::unimplemented;
 
-            CHECK(acl_convolution_utils::init_conf_wino(acp_, src_md_,
+            CHECK(acl::acl_convolution_utils::init_conf_wino(acp_, src_md_,
                     weights_md_, dst_md_, bias_md_, *desc(), *attr()));
 
             set_default_alg_kind(alg_kind::convolution_winograd);
@@ -104,8 +106,8 @@ struct acl_wino_convolution_fwd_t : public primitive_t {
             return status::success;
         }
 
-        acl_conv_conf_t acp_;
-        acl_post_ops_t post_ops;
+        acl::acl_conv_conf_t acp_;
+        acl::acl_post_ops_t post_ops;
     };
 
     acl_wino_convolution_fwd_t(const pd_t *apd) : primitive_t(apd) {}
@@ -141,7 +143,7 @@ private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 }; // acl_wino_convolution_fwd_t
 
-} // namespace acl
+} // namespace aarch64
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl

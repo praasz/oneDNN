@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2022 Arm Ltd. and affiliates
+* Copyright 2020-2023 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include "cpu/acl/acl_winograd_convolution.hpp"
+#include "cpu/aarch64/acl_winograd_convolution.hpp"
 
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace acl {
+namespace aarch64 {
 
 status_t acl_wino_convolution_fwd_t::execute_forward(
         const exec_ctx_t &ctx) const {
@@ -29,15 +29,15 @@ status_t acl_wino_convolution_fwd_t::execute_forward(
     // Retrieve primitive resource and configured Compute Library objects
     auto *acl_resource
             = ctx.get_resource_mapper()->get<acl_wino_resource_t>(this);
-    acl_obj_t<arm_compute::NEWinogradConvolutionLayer> &acl_wino_obj
+    acl::acl_obj_t<arm_compute::NEWinogradConvolutionLayer> &acl_wino_obj
             = acl_resource->get_acl_obj();
 
-    return execute_forward_conv_acl<
-            acl_obj_t<arm_compute::NEWinogradConvolutionLayer>, pd_t, data_t>(
+    return dnnl::impl::cpu::acl::execute_forward_conv_acl<
+            acl::acl_obj_t<arm_compute::NEWinogradConvolutionLayer>, pd_t, data_t>(
             ctx, acl_wino_obj, pd());
 }
 
-} // namespace acl
+} // namespace aarch64
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl

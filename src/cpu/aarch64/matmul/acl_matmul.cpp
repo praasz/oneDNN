@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021-2022 Arm Ltd. and affiliates
+* Copyright 2021-2023 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -14,17 +14,18 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include "cpu/acl/matmul/acl_matmul.hpp"
+#include "cpu/aarch64/matmul/acl_matmul.hpp"
 
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace acl {
+namespace aarch64 {
 namespace matmul {
 
 using namespace data_type;
 
-status_t acl_matmul_t::execute_forward(const exec_ctx_t &ctx) const {
+status_t acl_matmul_t::execute_forward_non_fixed_format(
+        const exec_ctx_t &ctx) const {
 
     status_t status = status::success;
     auto src_base = CTX_IN_MEM(const data_t *, DNNL_ARG_SRC);
@@ -37,11 +38,6 @@ status_t acl_matmul_t::execute_forward(const exec_ctx_t &ctx) const {
     std::lock_guard<std::mutex> _lock {this->mtx};
     auto *acl_resource = ctx.get_resource_mapper()->get<acl_resource_t>(this);
     acl_matmul_obj_t &acl_obj = acl_resource->get_acl_obj();
-
-    // [WA] ACL Matmul produces wrong results in case it is not reconfigured on each inference
-    acl_obj.gemm.configure(&acl_obj.src_tensor, &acl_obj.wei_tensor,
-        nullptr, &acl_obj.dst_tensor, pd()->amp_.alpha, 0.0f, pd()->amp_.gemm_info);
-
     // Run transpose kernel
     if (is_transA && !is_transB) {
         acl_obj.src_tensor.allocator()->allocate();
@@ -74,7 +70,7 @@ status_t acl_matmul_t::execute_forward(const exec_ctx_t &ctx) const {
     }
 
     if (use_dst_acc) {
-        // Put the result in a new tensor, it will be accumalated to the dst
+        // Put the result in a new tensor, it will be accumulated to the dst
         // during the post ops
         acl_obj.dst_tensor.allocator()->allocate();
     } else {
@@ -97,8 +93,59 @@ status_t acl_matmul_t::execute_forward(const exec_ctx_t &ctx) const {
     return status;
 }
 
+status_t acl_matmul_t::execute_forward_fixed_format(
+        const exec_ctx_t &ctx) const {
+
+    status_t status = status::success;
+    auto src_base = CTX_IN_MEM(const data_t *, DNNL_ARG_SRC);
+    auto wei_base = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
+
+    bool is_transA = pd()->amp_.is_transA;
+    bool use_dst_acc = pd()->amp_.use_dst_acc;
+
+    std::lock_guard<std::mutex> _lock {this->mtx};
+    auto *acl_resource = ctx.get_resource_mapper()->get<acl_resource_t>(this);
+    acl_matmul_obj_t &acl_obj = acl_resource->get_acl_obj();
+    // Run transpose kernel
+    if (is_transA) {
+        acl_obj.src_tensor.allocator()->allocate();
+        acl_obj.src_acc_tensor.allocator()->import_memory(
+                const_cast<data_t *>(src_base));
+        acl_obj.transA.run();
+        acl_obj.wei_tensor.allocator()->import_memory(
+                const_cast<data_t *>(wei_base));
+    } else {
+        acl_obj.src_tensor.allocator()->import_memory(
+                const_cast<data_t *>(src_base));
+        acl_obj.wei_tensor.allocator()->import_memory(
+                const_cast<data_t *>(wei_base));
+    }
+
+    if (use_dst_acc) {
+        // Put the result in a new tensor, it will be accumulated to the dst
+        // during the post ops
+        acl_obj.dst_tensor.allocator()->allocate();
+    } else {
+        auto dst_base = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
+        acl_obj.dst_tensor.allocator()->import_memory(dst_base);
+    }
+
+    acl_obj.gemm.run();
+
+    acl_obj.src_tensor.allocator()->free();
+    acl_obj.wei_tensor.allocator()->free();
+    if (is_transA) acl_obj.src_acc_tensor.allocator()->free();
+
+    void *dst = acl_obj.dst_tensor.buffer();
+    pd()->post_ops.execute(ctx, dst);
+
+    acl_obj.dst_tensor.allocator()->free();
+
+    return status;
+}
+
 } // namespace matmul
-} // namespace acl
+} // namespace aarch64
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
