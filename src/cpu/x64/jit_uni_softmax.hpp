@@ -169,6 +169,7 @@ struct jit_uni_softmax_fwd_t : public primitive_t {
         };
 
         int nthr_; // To not exceed the limit in execute used for set up.
+        size_t scratch_size_per_thr_ = 0;
         cpu_isa_t isa_ = isa_undef;
 
     private:
@@ -176,9 +177,10 @@ struct jit_uni_softmax_fwd_t : public primitive_t {
             if (utils::one_of(
                         dst_md()->data_type, data_type::u8, data_type::s8)) {
                 auto scratchpad = scratchpad_registry().registrar();
+                scratch_size_per_thr_ = axis_size(true) * sizeof(float);
                 scratchpad.template book<char>(
                         memory_tracking::names::key_softmax_interim_store,
-                        axis_size(true) * sizeof(float) * nthr_);
+                        scratch_size_per_thr_ * nthr_);
             }
         }
 
