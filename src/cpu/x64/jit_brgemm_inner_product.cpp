@@ -162,7 +162,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
     const auto wei_ic_stride
             = types::data_type_size(jbgp.wei_dt) * weights_d.off_v(ic_dims);
 
-    int typesize_scale = jbgp.wei_dt == data_type::nf4 ? 2 : 1;
+    int typesize_scale = one_of(jbgp.wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
 
     const auto ker = [&](int ithr_oc_mb, int nthr_oc_mb, int ithr_ic, int osb,
                              int osb_s, int ocb, int ocb_s, int icc, int icc_s,

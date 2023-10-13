@@ -1999,10 +1999,10 @@ typename utils::enable_if<tag_i == format_tag::any &&
 
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
-typename utils::enable_if<tag_i == format_tag::oi &&
+typename utils::enable_if<(tag_i == format_tag::oi || tag_i == format_tag::io) &&
                           (tag_o == format_tag::OI8i24o2i) &&
-                          type_i == dnnl_nf4&&
-                          type_o == dnnl_nf4>::type>
+                          utils::one_of(type_i, dnnl_nf4, dnnl_s4, dnnl_u4) &&
+                          type_i == type_o>::type>
 {
     PLAIN_TO_BLOCKED_IS_APPLICABLE();
 
@@ -2031,20 +2031,25 @@ typename utils::enable_if<tag_i == format_tag::oi &&
         constexpr int i_mult_i = blksize_i;
         // constexpr int nbits = 8;
 
-        auto extract_half_byte = [](uint8_t val, bool high_half) -> uint8_t {
-            uint8_t shift = high_half ? 0 : 4;
+        auto extract_half_byte = [&](uint8_t val, bool high_half) -> uint8_t {
+            uint8_t shift;
+            if (type_i == dnnl_nf4)
+                shift = high_half ? 0 : 4;
+            else
+                shift = high_half ? 0 : 4;
+
             return (uint8_t) ((val >> shift) & 0x000F);
         };
 
         auto insert_half_byte = [](uint8_t dst, uint8_t val, bool high_half) -> uint8_t {
-            uint8_t shift = high_half ? 4 : 0;
+            uint8_t shift = high_half ? 0 : 4;
             return dst | (uint8_t) (val << shift);
         };
 
-        // parallel_nd(NB_OC, NB_IC,
-        //     [&](int nb_oc, int nb_ic) {
-        for (int nb_oc = 0; nb_oc < NB_OC; nb_oc++) {
-            for (int nb_ic = 0; nb_ic < NB_IC; nb_ic++) {
+        parallel_nd(NB_OC, NB_IC,
+            [&](int nb_oc, int nb_ic) {
+        // for (int nb_oc = 0; nb_oc < NB_OC; nb_oc++) {
+        //     for (int nb_ic = 0; nb_ic < NB_IC; nb_ic++) {
                 const int oc_block = nstl::min(blksize_o, OC - nb_oc * blksize_o);
                 const int ic_block = nstl::min(blksize_i, IC - nb_ic * blksize_i);
 
@@ -2059,29 +2064,12 @@ typename utils::enable_if<tag_i == format_tag::oi &&
                             auto dst_val = ic == 1 ? output[oidx / 2] : 0;
                             dst_val = insert_half_byte(dst_val, src_val, (uint8_t)(oidx % 2));
                             output[oidx / 2] = dst_val;
-                        // for (int icb = 0; icb < utils::div_up(ic_block, nbits); ++icb) {
-
-                        //     uint8_t bin_val = 0x00;
-                        //     for (int ic = icb*nbits, shift = 0; ic < std::min(IC, (icb + 1)*nbits); ic++, shift++) {
-                        //         size_t iidx = (i_mult_o * nb_oc + oc) * input_d.blocking_desc().strides[0] +
-                        //                       (i_mult_i * nb_ic + ic) * input_d.blocking_desc().strides[1] +
-                        //                                             h * input_d.blocking_desc().strides[2] +
-                        //                                             w;
-
-                        //         uint8_t bit = extract_bit(input[iidx / nbits], (uint8_t)(iidx % nbits));
-                        //         bin_val |= (bit << shift);
-                        //     }
-
-                        //     size_t oidx = output_d.blk_off<!w_groups>(g, nb_oc, nb_ic, h, w) + oc * blksize_i + icb * nbits;
-                        //     output[oidx / nbits] = bin_val;
-
-                        // }
                         }
                     }
                 }
-            // });
-            }
-        }
+            });
+            // }
+        // }
 
         return status::success;
     }

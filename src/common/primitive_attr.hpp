@@ -268,7 +268,7 @@ struct runtime_scales_t : public c_compatible {
     int mask_ = 0;
     bool is_set_ = false;
 
-    int ndims_;
+    int ndims_ = 0;
     dnnl::impl::dims_t dims_;
 };
 
@@ -405,7 +405,7 @@ private:
     bool is_set_src = false, is_set_wei = false, is_set_dst = false;
     int mask_src = 0, mask_wei = 0, mask_dst = 0;
 
-    int ndims_wei;
+    int ndims_wei = 0;
     dnnl::impl::dims_t dims_wei;
 
     int get_mask(int arg) const {

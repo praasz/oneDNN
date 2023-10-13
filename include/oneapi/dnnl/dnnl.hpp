@@ -871,7 +871,11 @@ struct memory : public handle<dnnl_memory_t> {
         /// 1-bit integer
         bin = dnnl_bin,
         /// 4-bit normalized float.
-        nf4 = dnnl_nf4
+        nf4 = dnnl_nf4,
+        /// 4-bit signed integer.
+        s4 = dnnl_s4,
+        /// 4-bit unsigned integer.
+        u4 = dnnl_u4
     };
 
     /// Returns size of data type in bytes.

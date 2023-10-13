@@ -177,7 +177,7 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
                             pick(n_sp_dims, OI8i16o, OIw8i16o, OIhw8i16o,
                                     OIdhw8i16o)},
                     {8, pick(n_sp_dims, OI8i8o, OIw8i8o, OIhw8i8o, OIdhw8i8o)}};
-    } else if (is_xf16 || one_of(jbgp.wei_dt, nf4)) {
+    } else if (is_xf16 || one_of(jbgp.wei_dt, nf4, s4, u4)) {
         if (jbgp.is_amx) {
             return {{64,
                             pick(n_sp_dims, OI16i64o2i, OIw16i64o2i,
@@ -1281,7 +1281,8 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
     jbgp.src_dt = src_d.data_type();
     jbgp.dst_dt = dst_d.data_type();
     jbgp.wei_dt = weights_d.data_type();
-    jbgp.weights_decompression = one_of(jbgp.src_dt, f32, bf16) && one_of(jbgp.wei_dt, u8, nf4);
+    jbgp.weights_decompression = one_of(jbgp.src_dt, f32, bf16) &&
+                                 one_of(jbgp.wei_dt, u8, nf4, s4, u4);
     jbgp.bia_dt = jbgp.with_bias
             ? pick_by_prop_kind(jbgp.prop_kind, ipd.bias_desc.data_type,
                     data_type::undef, ipd.diff_bias_desc.data_type)

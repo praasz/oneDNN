@@ -475,6 +475,8 @@ inline size_t data_type_vnni_granularity(data_type_t data_type) {
         case s32: return size_t(1);
         case f16:
         case bf16:
+        case s4:
+        case u4:
         case nf4: return size_t(2);
         case s8:
         case u8: return size_t(4);

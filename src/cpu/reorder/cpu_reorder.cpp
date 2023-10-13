@@ -39,6 +39,8 @@ regular_impl_list_map() {
             {{u8, data_type::undef, 0}, &regular_u8_impl_list_map()},
             {{bin, data_type::undef, 0}, &regular_bin_impl_list_map()},
             {{nf4, data_type::undef, 0}, &regular_nf4_impl_list_map()},
+            {{s4, data_type::undef, 0}, &regular_s4_impl_list_map()},
+            {{u4, data_type::undef, 0}, &regular_u4_impl_list_map()},
     };
     return the_map;
 }
