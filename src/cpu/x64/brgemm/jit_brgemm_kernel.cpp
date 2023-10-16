@@ -1872,9 +1872,9 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
         }
     } else {
         if (brg.with_wei_decomp && brg.dt_b == data_type::u4) {
-            auto accm_tmp = [](int ld_block, int bd, int ld) {
-                return Vmm(max_vregs - 2 - (bd * ld_block + ld));
-            };
+            // auto accm_tmp = [](int ld_block, int bd, int ld) {
+            //     return Vmm(max_vregs - 2 - (bd * ld_block + ld));
+            // };
 
             static const float mask8[8] = {
                 8.f, 8.f, 8.f, 8.f, 8.f, 8.f, 8.f, 8.f
@@ -1920,6 +1920,11 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                     if (brg.with_wei_decomp_zero_points) {
                         uni_vsubps(vmm_load, vmm_load, vmm_mask8);
                     }
+
+                    if (brg.with_wei_decomp_scales) {
+                        uni_vmovups(bcst(), ptr[reg_local_wei_scales + ld * brg.ld_block * sizeof(float)]);
+                        uni_vmulps(vmm_load, vmm_load, bcst());
+                    }
                 }
 
                 bool have_to_load_bytes
@@ -1939,33 +1944,34 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                                 + brg.LDB * brg.rd_block * brg.typesize_B]);
                     }
                     for (int ld = 0; ld < ld_block2; ld++) {
-                        auto vmm = accm_tmp(ld_block2, bd, ld);
-                        if (rd == 0) {
-                            if (is_emdbd)
-                                uni_vmulps(vmm, load(ld), ptr_b[reg_aux_A + A_offset(bd, rd)]);
-                            else
-                                uni_vmulps(vmm, load(ld), bcst());
-                        } else {
+                        auto vmm = accm(ld_block2, bd, ld);
+                        // auto vmm = accm_tmp(ld_block2, bd, ld);
+                        // if (rd == 0) {
+                        //     if (is_emdbd)
+                        //         uni_vmulps(vmm, load(ld), ptr_b[reg_aux_A + A_offset(bd, rd)]);
+                        //     else
+                        //         uni_vmulps(vmm, load(ld), bcst());
+                        // } else {
                             if (is_emdbd)
                                 uni_vfmadd231ps(vmm, load(ld),
                                         ptr_b[reg_aux_A + A_offset(bd, rd)]);
                             else
                                 dot_product(vmm, load(ld), bcst());
-                        }
+                        // }
                     }
                 }
             }
 
-            for (int bd = bd_b; bd < bd_e; bd++) {
-                for (int ld = 0; ld < ld_block2; ld++) {
-                    auto vmm_accm_tmp = accm_tmp(ld_block2, bd, ld);
-                    auto vmm_accm = accm(ld_block2, bd, ld);
-                    if (brg.with_wei_decomp_scales) {
-                        uni_vmovups(bcst(), ptr[reg_local_wei_scales + ld * brg.ld_block * sizeof(float)]);
-                        uni_vfmadd231ps(vmm_accm, vmm_accm_tmp, bcst());
-                    }
-                }
-            }
+            // for (int bd = bd_b; bd < bd_e; bd++) {
+            //     for (int ld = 0; ld < ld_block2; ld++) {
+            //         auto vmm_accm_tmp = accm_tmp(ld_block2, bd, ld);
+            //         auto vmm_accm = accm(ld_block2, bd, ld);
+            //         if (brg.with_wei_decomp_scales) {
+            //             uni_vmovups(bcst(), ptr[reg_local_wei_scales + ld * brg.ld_block * sizeof(float)]);
+            //             uni_vfmadd231ps(vmm_accm, vmm_accm_tmp, bcst());
+            //         }
+            //     }
+            // }
 
             if (brg.with_wei_decomp) {
                 mov(reg_ldb_loop, ptr[rsp + reg_ldb_loop_offs_]);
@@ -2051,7 +2057,6 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
 
                         auto res = bcst();
                         auto mask = Vmm(max_vregs - 5);
-                        const unsigned char _cmp_lt_os = 1;
                         vpcmpgtd(mask, vmm_load, vmm_mask7);
                         vpermd(res, vmm_load, vmm_lookup_low);
                         vpsubd(vmm_load, vmm_load, vmm_mask8);
