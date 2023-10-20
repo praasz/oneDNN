@@ -132,6 +132,7 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
     const int tail_opmask_idx_ = 2;
 
     Opmask tail_opmask = Opmask(tail_opmask_idx_);
+    Opmask cmp_mask = Opmask(3);
 
     void operator()(const call_params_t *p) const override {
         return jit_generator::operator()(p);
@@ -324,6 +325,37 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
             uni_vmaxps(v1, v1, v2);
     }
 
+    void uni_vmovups_maybe_tail(
+            const Vmm &v1, const Vmm &v2, const Vmm &vtmp, const bool tail) {
+        if (tail) {
+            if (is_superset(isa, avx512_core)) {
+                uni_vmovups(v1 | tail_opmask, v2);
+            } else {
+                uni_vblendvps(vtmp, v1, v2, tail_vmask);
+                uni_vmovups(v1, vtmp);
+            }
+        } else
+            uni_vmovups(v1, v2);
+    }
+
+    void uni_vcmpps_maybe_tail(
+            const Vmm &v1, const Vmm &v2, const Vmm &vmask, const bool tail) {
+        if (tail) {
+            if (is_superset(isa, avx512_core)) {
+                vcmpps(cmp_mask, v1 | tail_opmask, v2, _cmp_nle_us);
+            } else {
+                uni_vblendvps(vmask, vneg_flt_max, v1, tail_vmask);
+                uni_vcmpps(vmask, vmask, v2, _cmp_nle_us);
+            }
+        } else {
+            if (is_superset(isa, avx512_core)) {
+                vcmpps(cmp_mask, v1, v2, _cmp_nle_us);
+            } else {
+                uni_vcmpps(vmask, v1, v2, _cmp_nle_us);
+            }
+        }
+    }
+
     void store(const Address &addr, const Vmm &vmm, data_type_t dt,
             bool tail = false) {
         // Use temporary register in storing when convertion is needed
@@ -380,35 +412,6 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
         get_horizontal_op(vmax, vtmp = vsum, op_t::max);
     }
 
-    void accumulate_vmax() {
-        if (is_avx2_ne_xf16_ && is_data_type_xf16(src_d_.data_type())) {
-            accumulate_avx2_ne_xf16_vmax();
-            return;
-        }
-
-        // flush to -FLT_MAX before accumulation
-        uni_vmovups(vmax, vneg_flt_max);
-
-        axis_loop([&](int unroll, bool tail = false) {
-            for (int i = 0; i < unroll; i++) {
-                Vmm vreg_tmp_src = Vmm(i + 1);
-                vtmp = Vmm(i + 2);
-                // do maxps directly from memory on f32 avx2 for performance purpose
-                if (!tail && is_superset(isa, avx2)
-                        && !is_superset(isa, avx512_core)
-                        && src_d_.data_type() == data_type::f32) {
-                    uni_vmaxps(vmax, vmax, src_ptr(src_axis_stride_ * i));
-                } else {
-                    io_[src_d_.data_type()]->load(
-                            src_ptr(src_axis_stride_ * i), vreg_tmp_src, tail);
-                    uni_vmaxps_maybe_tail(vmax, vreg_tmp_src, vtmp, tail);
-                }
-            }
-        });
-
-        get_horizontal_op(vmax, vtmp = vsum, op_t::max);
-    }
-
     // Use ne_convert instruction to load xf16 even/odd elements from memory
     void accumulate_avx2_ne_xf16_vsum() {
         // Initialize saturation vector register
@@ -452,48 +455,69 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
         if (is_logsoftmax_) log_injector_->compute_vector(vsum.getIdx());
     }
 
-    void accumulate_vsum() {
+    void update_vmax_vsum(const Vmm &vsrc, const Vmm &vsrc_max, const Vmm &vmask, const bool tail) {
+        // vmax needs to update, if any of the elements in vsrc is larger than that in vmax
+        // compare to max
+        uni_vcmpps_maybe_tail(vsrc, vmax, vmask, tail);
+
+        // jmp based on mask results
+        Label accumulate_src;
+        Reg32 reg_tmp_32 = reg_tmp.cvt32();
+        if (is_superset(isa, avx512_core)) {
+            kmovw(reg_tmp_32, cmp_mask);
+        } else {
+            uni_vmovmskps(reg_tmp_32, vmask);
+        }
+        cmp(reg_tmp_32, 0x0);
+        je(accumulate_src, T_NEAR);
+
+        // update vmax and vsum
+        if (tail)
+            uni_vmovups(vsrc_max, vneg_flt_max);
+        uni_vmovups_maybe_tail(vsrc_max, vsrc, vtmp = vmask, tail);
+        get_horizontal_op(vsrc_max, vtmp = vmask, op_t::max);
+        uni_vsubps(vmax, vmax, vsrc_max);
+        exp_injector_->compute_vector(vmax.getIdx());
+        uni_vmulps(vsum, vsum, vmax);
+        uni_vmovups(vmax, vsrc_max);
+
+        // accumulate src
+        L(accumulate_src);
+        Vmm vexp = vsrc_max;
+        uni_vsubps(vexp, vsrc, vmax);
+        exp_injector_->compute_vector(vexp.getIdx());
+        uni_vaddps_maybe_tail(vsum, vexp, vtmp = vmask, tail);
+    }
+
+    void accumulate_vmax_vsum() {
         if (is_avx2_ne_xf16_ && is_data_type_xf16(src_d_.data_type())) {
+            accumulate_avx2_ne_xf16_vmax();
             accumulate_avx2_ne_xf16_vsum();
             return;
         }
 
-        // Initialize saturation vector register
-        io_.init_saturate_f32({dst_d_.data_type()});
-
-        uni_vpxor(vsum, vsum, vsum); // flush to zero before accumulation
+        // flush to -FLT_MAX before accumulation
+        uni_vmovups(vmax, vneg_flt_max);
+        // flush to zero before accumulation
+        uni_vpxor(vsum, vsum, vsum);
 
         axis_loop([&](int unroll, bool tail = false) {
             for (int i = 0; i < unroll; i++) {
                 Vmm vreg_tmp_src = Vmm(i + 1);
-                vtmp = Vmm(i + 2);
+                Vmm vreg_tmp_max = Vmm(i + 2);
+                vtmp = Vmm(i + 3);
+
                 io_[src_d_.data_type()]->load(
                         src_ptr(src_axis_stride_ * i), vreg_tmp_src, tail);
-                uni_vsubps(vreg_tmp_src, vreg_tmp_src, vmax);
-                if (is_logsoftmax_) { // store before applying exp
-                    if (need_scratchpad_)
-                        store(interim_ptr(interim_axis_stride_ * i),
-                                vreg_tmp_src, data_type::f32, tail);
-                    else
-                        store(dst_ptr(dst_axis_stride_ * i), vreg_tmp_src,
-                                dst_d_.data_type(), tail);
-                }
-                exp_injector_->compute_vector(vreg_tmp_src.getIdx());
-                uni_vaddps_maybe_tail(vsum, vreg_tmp_src, vtmp, tail);
-                if (is_softmax_) { // store after applying exp
-                    if (need_scratchpad_)
-                        store(interim_ptr(interim_axis_stride_ * i),
-                                vreg_tmp_src, data_type::f32, tail);
-                    else
-                        store(dst_ptr(dst_axis_stride_ * i), vreg_tmp_src,
-                                dst_d_.data_type(), tail);
-                }
+                update_vmax_vsum(vreg_tmp_src, vreg_tmp_max, vtmp, tail);
             }
         });
 
-        get_horizontal_op(vsum, vtmp = vmax, op_t::sum);
-        if (is_softmax_) uni_vdivps(vsum, vone, vsum, vtmp = vmax);
-        if (is_logsoftmax_) log_injector_->compute_vector(vsum.getIdx());
+        get_horizontal_op(vsum, vtmp = Vmm(1), op_t::sum);
+        if (is_softmax_)
+            uni_vdivps(vsum, vone, vsum, vtmp = Vmm(1));
+        if (is_logsoftmax_)
+            log_injector_->compute_vector(vsum.getIdx());
     }
 
     // Use ne_convert instruction to load xf16 even/odd elements from memory
@@ -551,21 +575,24 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
             return;
         }
 
+        // Initialize saturation vector register
+        io_.init_saturate_f32({dst_d_.data_type()});
+
         axis_loop([&](int unroll, bool tail = false) {
             for (int i = 0; i < unroll; i++) {
+                // compute dst
                 Vmm vreg_tmp_src = Vmm(i + 1);
-                if (need_scratchpad_)
-                    io_[data_type::f32]->load(
-                            interim_ptr(interim_axis_stride_ * i), vreg_tmp_src,
-                            tail);
-                else
-                    io_[dst_d_.data_type()]->load(
-                            dst_ptr(dst_axis_stride_ * i), vreg_tmp_src, tail);
-
-                if (is_softmax_) uni_vmulps(vreg_tmp_src, vreg_tmp_src, vsum);
+                io_[src_d_.data_type()]->load(
+                        src_ptr(src_axis_stride_ * i), vreg_tmp_src, tail);
+                uni_vsubps(vreg_tmp_src, vreg_tmp_src, vmax);
+                if (is_softmax_) {
+                    exp_injector_->compute_vector(vreg_tmp_src.getIdx());
+                    uni_vmulps(vreg_tmp_src, vreg_tmp_src, vsum);
+                }
                 if (is_logsoftmax_)
                     uni_vsubps(vreg_tmp_src, vreg_tmp_src, vsum);
 
+                // compute postops
                 if (is_superset(isa, avx512_core)) {
                     Vmm vscale = vmax;
                     uni_vmovups(vscale, ptr[reg_src_scales]);
@@ -645,8 +672,7 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
     }
 
     void forward() {
-        accumulate_vmax();
-        accumulate_vsum();
+        accumulate_vmax_vsum();
         compute_dst();
     }
 
