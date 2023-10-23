@@ -31,6 +31,7 @@
 #include "cpu/x64/cpu_barrier.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
 #include "cpu/x64/jit_brgemm_decompress_kernel.hpp"
+#include "cpu/x64/jit_brgemm_weights_decompression_kernel.hpp"
 #include "cpu/x64/jit_brgemm_inner_product_utils.hpp"
 #include "cpu/x64/jit_brgemm_post_ops.hpp"
 #include "cpu/x64/jit_brgemm_transpose_utils.hpp"
@@ -110,7 +111,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                 CHECK(brgemm_desc_init(&brg, isa, jbgp_.brg_type, jbgp_.src_dt,
                         jbgp_.wei_dt, false, false, brgemm_row_major, alpha,
                         vbeta, jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK,
-                        nullptr, is_wei_decomp, &weights_md_, attr()));
+                        nullptr, is_wei_decomp && jbgp_.wei_decomp_algo == weights_decomp_kind_t::immediate,
+                        &weights_md_, attr()));
 
                 auto LDD = jbgp_.oc_without_padding;
                 CHECK(brgemm_desc_set_postops(
@@ -207,6 +209,25 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     new jit_brgemm_decompress_kernel_t(&pd()->jbgp_)));
         }
 
+        if (pd()->jbgp_.weights_decompression && pd()->jbgp_.wei_decomp_algo == weights_decomp_kind_t::prepack) {
+            weights_decompression_compile_params_t jcp = {};
+            const int ic_internal_block = pd()->jbgp_.is_amx ? 2 : 1;
+            jcp.oc_size = pd()->jbgp_.oc_block * ic_internal_block;
+            jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
+            jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+            jcp.decomp_buffer_dt = pd()->jbgp_.wei_dt;
+
+            if (mayiuse(avx512_core)) {
+                CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
+                        new jit_brgemm_weights_decompression_kernel_t<avx512_core>(jcp)));
+            } else if (mayiuse(avx2)) {
+                CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
+                        new jit_brgemm_weights_decompression_kernel_t<avx2>(jcp)));
+            } else {
+                return status::unimplemented;
+            }
+        }
+
         if (pd()->jbgp_.use_buffer_a)
             CHECK(create_brgemm_copy_to_coarse(copy_src_kernel_, &pd()->jbgp_));
         if (pd()->jbgp_.nthr_ic_b > 1) {
@@ -232,6 +253,7 @@ private:
     brgemm_containers::brgemm_palette_container_t brgemm_palettes_ {
             brgemm_inner_product_utils::max_num_brg_kernels_ip};
     std::unique_ptr<jit_brgemm_decompress_kernel_t> brg_decomp_kernel_;
+    std::unique_ptr<jit_weights_decompression_kernel_t> brg_weights_decomp_kernel_;
 };
 
 template <cpu_isa_t isa>

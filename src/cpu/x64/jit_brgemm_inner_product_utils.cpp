@@ -1300,8 +1300,15 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
     jbgp.weights_decompression = one_of(jbgp.src_dt, f32, bf16) &&
                                  one_of(jbgp.wei_dt, u8, nf4, s4, u4);
+    jbgp.wei_decomp_algo = weights_decomp_kind_t::immediate;
+    jbgp.orig_wei_dt = jbgp.wei_dt;
     jbgp.with_grouped_weights_decompression = false;
     if (jbgp.weights_decompression) {
+        if (jbgp.mb > 4 && jbgp.orig_wei_dt == u8) {
+            jbgp.wei_decomp_algo = weights_decomp_kind_t::prepack;
+            jbgp.wei_dt = jbgp.src_dt;
+        }
+
         auto wei_scales = attr.scales_.get(DNNL_ARG_WEIGHTS);
         if (!wei_scales.has_default_values() && wei_scales.dims_[1] != 1) {
             jbgp.with_grouped_weights_decompression = true;
@@ -1489,6 +1496,11 @@ void jit_brgemm_ip_conf_t::init_scratchpad_base(
                 types::data_type_size(jbgp.wei_dt));
 
     if (jbgp.weights_decompression) {
+        if (jbgp.wei_decomp_algo == weights_decomp_kind_t::prepack) {
+            scratchpad.book(key_brgemm_primitive_decomp_buf,
+                (size_t)jbgp.nthr * jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block,
+                types::data_type_size(jbgp.wei_dt));
+        }
         if (jbgp.wei_decomp_scales_buffer_size)
             scratchpad.book(key_decompression_scales, jbgp.wei_decomp_scales_buffer_size, sizeof(float));
         if (jbgp.wei_decomp_zero_points_buffer_size)
