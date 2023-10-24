@@ -722,13 +722,17 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
 
     jbgp.wei_decomp_scales_buffer_size = jbgp.wei_decomp_zero_points_buffer_size = 0;
     if (jbgp.weights_decompression) {
-        auto wei_scales_dims = attr.scales_.get(DNNL_ARG_WEIGHTS).dims_;
-        if (wei_scales_dims[0] % jbgp.simd_w) {
-            jbgp.wei_decomp_scales_buffer_size = rnd_up(wei_scales_dims[0], jbgp.simd_w) * wei_scales_dims[1];
+        if (attr.scales_.get(DNNL_ARG_WEIGHTS).ndims_) {
+            auto wei_scales_dims = attr.scales_.get(DNNL_ARG_WEIGHTS).dims_;
+            if (wei_scales_dims[0] % jbgp.simd_w) {
+                jbgp.wei_decomp_scales_buffer_size = rnd_up(wei_scales_dims[0], jbgp.simd_w) * wei_scales_dims[1];
+            }
         }
-        auto wei_zero_points_dims = attr.zero_points_.get_dims(DNNL_ARG_WEIGHTS);
-        if (wei_zero_points_dims[0] % jbgp.simd_w) {
-            jbgp.wei_decomp_zero_points_buffer_size = rnd_up(wei_zero_points_dims[0], jbgp.simd_w) * wei_zero_points_dims[1];
+        if (attr.zero_points_.get_ndims(DNNL_ARG_WEIGHTS)) {
+            auto wei_zero_points_dims = attr.zero_points_.get_dims(DNNL_ARG_WEIGHTS);
+            if (wei_zero_points_dims[0] % jbgp.simd_w) {
+                jbgp.wei_decomp_zero_points_buffer_size = rnd_up(wei_zero_points_dims[0], jbgp.simd_w) * wei_zero_points_dims[1];
+            }
         }
     }
 
@@ -1485,8 +1489,10 @@ void jit_brgemm_ip_conf_t::init_scratchpad_base(
                 types::data_type_size(jbgp.wei_dt));
 
     if (jbgp.weights_decompression) {
-        scratchpad.book(key_decompression_scales, jbgp.wei_decomp_scales_buffer_size, sizeof(float));
-        scratchpad.book(key_decompression_zero_points, jbgp.wei_decomp_zero_points_buffer_size, sizeof(float));
+        if (jbgp.wei_decomp_scales_buffer_size)
+            scratchpad.book(key_decompression_scales, jbgp.wei_decomp_scales_buffer_size, sizeof(float));
+        if (jbgp.wei_decomp_zero_points_buffer_size)
+            scratchpad.book(key_decompression_zero_points, jbgp.wei_decomp_zero_points_buffer_size, sizeof(float));
     }
 }
 

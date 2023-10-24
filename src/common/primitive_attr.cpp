@@ -20,6 +20,7 @@
 #include "primitive_attr.hpp"
 #include "type_helpers.hpp"
 #include "utils.hpp"
+#include <iostream>
 
 using namespace dnnl::impl;
 using namespace dnnl::impl::status;
@@ -128,6 +129,7 @@ status_t zero_points_t::set(int arg, const dims_t dims, int ndims) {
         case DNNL_ARG_WEIGHTS:
             is_set_wei = true;
             ndims_wei = ndims;
+            mask_wei = 1;
             utils::array_copy(dims_wei, dims, ndims);
             break;
     }

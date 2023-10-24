@@ -245,6 +245,7 @@ struct runtime_scales_t : public c_compatible {
     status_t set(const dims_t dims, int ndims) {
         is_set_ = true;
         ndims_ = ndims;
+        mask_ = 1;
         utils::array_copy(dims_, dims, ndims_);
         return status::success;
     }
@@ -369,7 +370,8 @@ struct zero_points_t : public c_compatible {
     bool operator==(const zero_points_t &rhs) const {
         return mask_src == rhs.mask_src && mask_wei == rhs.mask_wei
                 && mask_dst == rhs.mask_dst && is_set_src == rhs.is_set_src
-                && is_set_wei == rhs.is_set_wei && is_set_dst == rhs.is_set_dst;
+                && is_set_wei == rhs.is_set_wei && is_set_dst == rhs.is_set_dst
+                && IMPLICATION(ndims_wei > 0, ndims_wei == rhs.ndims_wei && utils::array_cmp(dims_wei, rhs.dims_wei, ndims_wei));
     }
 
     // arg-specific checks
