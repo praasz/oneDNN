@@ -514,10 +514,9 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
         });
 
         get_horizontal_op(vsum, vtmp = Vmm(1), op_t::sum);
-        if (is_softmax_)
-            uni_vdivps(vsum, vone, vsum, vtmp = Vmm(1));
-        if (is_logsoftmax_)
-            log_injector_->compute_vector(vsum.getIdx());
+
+        log_injector_->compute_vector(vsum.getIdx());
+        uni_vaddps(vsum, vsum, vmax);
     }
 
     // Use ne_convert instruction to load xf16 even/odd elements from memory
@@ -584,13 +583,10 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
                 Vmm vreg_tmp_src = Vmm(i + 1);
                 io_[src_d_.data_type()]->load(
                         src_ptr(src_axis_stride_ * i), vreg_tmp_src, tail);
-                uni_vsubps(vreg_tmp_src, vreg_tmp_src, vmax);
+                uni_vsubps(vreg_tmp_src, vreg_tmp_src, vsum);
                 if (is_softmax_) {
                     exp_injector_->compute_vector(vreg_tmp_src.getIdx());
-                    uni_vmulps(vreg_tmp_src, vreg_tmp_src, vsum);
                 }
-                if (is_logsoftmax_)
-                    uni_vsubps(vreg_tmp_src, vreg_tmp_src, vsum);
 
                 // compute postops
                 if (is_superset(isa, avx512_core)) {
@@ -689,7 +685,9 @@ struct jit_softmax_kernel_t : jit_softmax_kernel_base_t, public jit_generator {
             exp_injector_.reset(new jit_uni_eltwise_injector_f32<isa>(this,
                     alg_kind::eltwise_exp, 0.0f, 0.0f, 1.0f, true,
                     reg_exp_injector_table, injector_mask));
-        if (pd_->is_fwd() && is_logsoftmax_) {
+        // In order to avoid all the final divisions (or multiplications),
+        // log_injector_ will be used once even when is_softmax is true
+        if (pd_->is_fwd()) {
             log_injector_.reset(new jit_uni_eltwise_injector_f32<isa>(this,
                     alg_kind::eltwise_log, 0.0f, 0.0f, 1.0f, true,
                     reg_log_injector_table, injector_mask));
