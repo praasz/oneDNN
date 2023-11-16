@@ -254,7 +254,7 @@ int jit_brgemm_ip_conf_t::get_oc_block(bool try_to_adjust) const {
         return 0;
     } else {
         int oc_block = 0;
-        const int max_block = is_superset(jbgp.isa, avx512_core) ? 4 : 3;
+        const int max_block = 2;//is_superset(jbgp.isa, avx512_core) ? 4 : 3;
         if (jbgp.oc >= max_block * jbgp.simd_w) {
             oc_block = max_block * jbgp.simd_w;
         } else if (jbgp.oc >= 2 * jbgp.simd_w) {
@@ -354,7 +354,7 @@ int jit_brgemm_ip_conf_t::get_adjusted_oc_block() const {
         return 64;
     // Use oc block to be 24 if weight size >= 16MB on avx2 f32 to optimized memory consumption.
     if (is_f32_compute_avx2 && wei_size >= 16 * (1 << 20))
-        return 24;
+        return 16;
 
     // we can't change block size on forward and weights update (external)
     // if layout is set by user, for backward data it can be chosen different

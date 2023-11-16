@@ -1886,51 +1886,55 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
             auto reg_local_wei_zp = reg_ldb_loop;
 
             auto vmm_zero_points = Vmm(max_vregs - 1);
-            auto vmm_mask8 = Vmm(max_vregs - 1);
-            auto vmm_mask7 = Vmm(max_vregs - 2);
             auto vmm_lookup = Vmm(max_vregs - 1);
-            auto vmm_lookup_low = Vmm(max_vregs - 3);
-            auto vmm_lookup_high = Vmm(max_vregs - 4);
+            auto vmm_mask_low_half = Vmm(max_vregs - 2);
+            auto vmm_tmp = Vmm(max_vregs - 3);
+            auto ymm_tmp = Ymm(max_vregs - 3);
+            auto vmm_tmp1 = Vmm(max_vregs - 4);
             if (brg.dt_b == data_type::nf4) {
-                static const float lookup[16] = {
-                    -1.0,
-                    -0.6961928009986877,
-                    -0.5250730514526367,
-                    -0.39491748809814453,
-                    -0.28444138169288635,
-                    -0.18477343022823334,
-                    -0.09105003625154495,
-                    0.0,
-                    0.07958029955625534,
-                    0.16093020141124725,
-                    0.24611230194568634,
-                    0.33791524171829224,
-                    0.44070982933044434,
-                    0.5626170039176941,
-                    0.7229568362236023,
-                    1.0};
+                static const float lookup[16] = {-7.f,
+                                                -6.f,
+                                                -5.f,
+                                                -4.f,
+                                                -3.f,
+                                                -2.f,
+                                                -1.f,
+                                                0.0f,
+                                                1.f,
+                                                2.f,
+                                                3.f,
+                                                4.f,
+                                                5.f,
+                                                6.f,
+                                                7.f,
+                                                8.f};
 
-                static const int32_t mask8[16] = {
-                    8, 8, 8, 8, 8, 8, 8, 8,
-                    8, 8, 8, 8, 8, 8, 8, 8
-                };
-                static const int32_t mask7[16] = {
-                    7, 7, 7, 7, 7, 7, 7, 7,
-                    7, 7, 7, 7, 7, 7, 7, 7
-                };
+                static const int8_t lookup_int8[32] = {-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,
+                                                       -7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8};
+                static const int8_t mask[32] = {0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+                                                0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F};
+
+                // static const int32_t mask8[16] = {
+                //     8, 8, 8, 8, 8, 8, 8, 8,
+                //     8, 8, 8, 8, 8, 8, 8, 8
+                // };
+                // static const int32_t mask7[16] = {
+                //     7, 7, 7, 7, 7, 7, 7, 7,
+                //     7, 7, 7, 7, 7, 7, 7, 7
+                // };
 
                 auto reg_ptr = reg_local_wei_zp;
 
                 if (brg.isa_impl == avx2) {
-                    mov(reg_ptr, (size_t)lookup);
-                    uni_vmovups(vmm_lookup_low, ptr[reg_ptr]);
-                    mov(reg_ptr, (size_t)lookup);
-                    uni_vmovups(vmm_lookup_high, ptr[reg_ptr + 8 * sizeof(float)]);
-                    mov(reg_ptr, (size_t)mask8);
-                    uni_vmovups(vmm_mask8, ptr[reg_ptr]);
-                    mov(reg_ptr, (size_t)mask7);
-                    uni_vmovups(vmm_mask7, ptr[reg_ptr]);
-                    vmm_zero_points = Vmm(max_vregs - 5);
+                    mov(reg_ptr, (size_t)lookup_int8);
+                    uni_vmovups(vmm_lookup, ptr[reg_ptr]);
+                    // mov(reg_ptr, (size_t)lookup);
+                    // uni_vmovups(vmm_lookup_high, ptr[reg_ptr + 8 * sizeof(float)]);
+                    mov(reg_ptr, (size_t)mask);
+                    uni_vmovups(vmm_mask_low_half, ptr[reg_ptr]);
+                    // mov(reg_ptr, (size_t)mask1);
+                    // uni_vmovups(vmm_mask1, ptr[reg_ptr]);
+                    // vmm_zero_points = Vmm(max_vregs - 5);
                 } else {
                     mov(reg_ptr, (size_t)lookup);
                     uni_vmovups(vmm_lookup, ptr[reg_ptr]);
@@ -1973,25 +1977,45 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                         }
                         uni_vcvtdq2ps(vmm_load, vmm_load);
                     } else if (brg.dt_b == data_type::nf4) {
-                        uni_vpmovzxbd(vmm_load, addr);
-                        if (rd % 2 == 0) {
-                            uni_vpsrld(vmm_load, vmm_load, 4);
-                        } else {
-                            uni_vpslld(vmm_load, vmm_load, 28);
-                            uni_vpsrld(vmm_load, vmm_load, 28);
+                        // auto vmm_tmp2 = load(ld_block2 - 1);
+
+                        if (ld == 0) {
+                            if (rd % 2 == 0) {
+                                uni_vmovups(ymm_tmp, addr);
+                                uni_vpsrld(vmm_tmp1, vmm_tmp, 4);
+                                uni_vandps(vmm_tmp1, vmm_tmp1, vmm_mask_low_half);
+                            } else {
+                                uni_vandps(vmm_tmp1, vmm_tmp, vmm_mask_low_half);
+                            }
+                            vpshufb(vmm_tmp1, vmm_lookup, vmm_tmp1);
+                            // vpermpd(vmm_tmp2, vmm_tmp1, 14);
                         }
 
-                        if (brg.isa_impl == avx2) {
-                            auto res = bcst();
-                            auto mask = Vmm(max_vregs - 5);
-                            vpcmpgtd(mask, vmm_load, vmm_mask7);
-                            vpermd(res, vmm_load, vmm_lookup_low);
-                            vpsubd(vmm_load, vmm_load, vmm_mask8);
-                            vpermd(vmm_load, vmm_load, vmm_lookup_high);
-                            vblendvps(vmm_load, res, vmm_load, mask);
-                        } else {
-                            vpermd(vmm_load, vmm_load, vmm_lookup);
+                        if (ld % 2) {
+                            vpsrldq(vmm_tmp1, vmm_tmp1, 8);
                         }
+                        uni_vpmovsxbd(vmm_load, vmm_tmp1);
+                        uni_vcvtdq2ps(vmm_load, vmm_load);
+
+                        // uni_vpmovzxbd(vmm_load, addr);
+                        // if (rd % 2 == 0) {
+                        //     uni_vpsrld(vmm_load, vmm_load, 4);
+                        // } else {
+                        //     uni_vpslld(vmm_load, vmm_load, 28);
+                        //     uni_vpsrld(vmm_load, vmm_load, 28);
+                        // }
+
+                        // if (brg.isa_impl == avx2) {
+                        //     auto res = bcst();
+                        //     auto mask = Vmm(max_vregs - 5);
+                        //     vpcmpgtd(mask, vmm_load, vmm_mask7);
+                        //     vpermd(res, vmm_load, vmm_lookup_low);
+                        //     vpsubd(vmm_load, vmm_load, vmm_mask8);
+                        //     vpermd(vmm_load, vmm_load, vmm_lookup_high);
+                        //     vblendvps(vmm_load, res, vmm_load, mask);
+                        // } else {
+                        //     vpermd(vmm_load, vmm_load, vmm_lookup);
+                        // }
                     } else {
                         assert(!"unsupported combination");
                     }
