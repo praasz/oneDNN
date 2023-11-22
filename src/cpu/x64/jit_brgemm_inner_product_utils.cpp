@@ -351,7 +351,7 @@ int jit_brgemm_ip_conf_t::get_adjusted_oc_block() const {
         return 32;
     // Use oc block to be 64 if weight size >= 16MB on avx512 f32 to optimized memory consumption.
     if (is_f32_compute_avx512 && wei_size >= 16 * (1 << 20))
-        return 64;
+        return 32;
     // Use oc block to be 24 if weight size >= 16MB on avx2 f32 to optimized memory consumption.
     if (is_f32_compute_avx2 && wei_size >= 16 * (1 << 20))
         return 16;

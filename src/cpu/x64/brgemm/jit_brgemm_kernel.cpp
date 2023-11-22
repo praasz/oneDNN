@@ -46,8 +46,7 @@ struct jit_brgemm_kernel_t : public jit_generator {
         , postops_injector_(nullptr)
         , max_effective_vregs(
                   max_vregs - (brg.is_int8 && !brg.has_int8_vnni ? 2 : 0)
-                            - (one_of(brg.dt_b, data_type::nf4) && brg.isa_impl == avx2 ? 5 : 0)
-                            - (one_of(brg.dt_b, data_type::nf4) ? 1 : 0)
+                            - (one_of(brg.dt_b, data_type::nf4) ? 4 : 0)
                             - (brg.with_wei_decomp_zero_points && brg.wei_decomp_zero_points_stride == 0 ? 1 : 0)) {
 
         // The implementation uses is_superset(), is_subset() utilities.
@@ -1891,6 +1890,7 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
             auto vmm_tmp = Vmm(max_vregs - 3);
             auto ymm_tmp = Ymm(max_vregs - 3);
             auto vmm_tmp1 = Vmm(max_vregs - 4);
+            auto xmm_tmp1 = Xmm(max_vregs - 4);
             if (brg.dt_b == data_type::nf4) {
                 static const float lookup[16] = {-7.f,
                                                 -6.f,
@@ -1909,9 +1909,13 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                                                 7.f,
                                                 8.f};
 
-                static const int8_t lookup_int8[32] = {-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,
+                static const int8_t lookup_int8[64] = {-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,
+                                                       -7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,
+                                                       -7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,
                                                        -7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8};
-                static const int8_t mask[32] = {0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+                static const int8_t mask[64] = {0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+                                                0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+                                                0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
                                                 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F};
 
                 // static const int32_t mask8[16] = {
@@ -1924,22 +1928,10 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                 // };
 
                 auto reg_ptr = reg_local_wei_zp;
-
-                if (brg.isa_impl == avx2) {
-                    mov(reg_ptr, (size_t)lookup_int8);
-                    uni_vmovups(vmm_lookup, ptr[reg_ptr]);
-                    // mov(reg_ptr, (size_t)lookup);
-                    // uni_vmovups(vmm_lookup_high, ptr[reg_ptr + 8 * sizeof(float)]);
-                    mov(reg_ptr, (size_t)mask);
-                    uni_vmovups(vmm_mask_low_half, ptr[reg_ptr]);
-                    // mov(reg_ptr, (size_t)mask1);
-                    // uni_vmovups(vmm_mask1, ptr[reg_ptr]);
-                    // vmm_zero_points = Vmm(max_vregs - 5);
-                } else {
-                    mov(reg_ptr, (size_t)lookup);
-                    uni_vmovups(vmm_lookup, ptr[reg_ptr]);
-                    vmm_zero_points = Vmm(max_vregs - 2);
-                }
+                mov(reg_ptr, (size_t)lookup_int8);
+                uni_vmovups(vmm_lookup, ptr[reg_ptr]);
+                mov(reg_ptr, (size_t)mask);
+                uni_vmovups(vmm_mask_low_half, ptr[reg_ptr]);
             }
 
             mov(reg_local_wei_scales, ptr[rsp + reg_aux2_wei_scales_offs_]);
@@ -1981,7 +1973,7 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
 
                         if (ld == 0) {
                             if (rd % 2 == 0) {
-                                uni_vmovups(ymm_tmp, addr);
+                                uni_vmovups(vmm_tmp, addr);
                                 uni_vpsrld(vmm_tmp1, vmm_tmp, 4);
                                 uni_vandps(vmm_tmp1, vmm_tmp1, vmm_mask_low_half);
                             } else {
@@ -1992,7 +1984,11 @@ void jit_brgemm_kernel_t<isa, Wmm>::gemm_microkernel(int bd_block2,
                         }
 
                         if (ld % 2) {
-                            vpsrldq(vmm_tmp1, vmm_tmp1, 8);
+                            if (brg.isa_impl == avx2) {
+                                vpsrldq(vmm_tmp1, vmm_tmp1, 8);
+                            } else {
+                                vextractf64x2(xmm_tmp1, vmm_tmp1, 1);
+                            }
                         }
                         uni_vpmovsxbd(vmm_load, vmm_tmp1);
                         uni_vcvtdq2ps(vmm_load, vmm_load);
