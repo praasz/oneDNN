@@ -78,10 +78,15 @@ if(ONEDNN_ENABLE_GEMM_KERNELS_ISA MATCHES "^(SSE41|NONE)$")
     endforeach()
 endif()
 
-if(ONEDNN_ENABLE_GEMM_KERNELS_ISA MATCHES "^(NONE)$")
-    file(GLOB_RECURSE SOURCES_SSE41 ${CMAKE_CURRENT_SOURCE_DIR}/gemm/*)
+if(DNNL_REMOVE_SSE)
+    file(GLOB_RECURSE SOURCES_SSE41 ${CMAKE_CURRENT_SOURCE_DIR}/jit*sse*)
     foreach(sse41_file ${SOURCES_SSE41})
-        list(REMOVE_ITEM SOURCES "${sse41_file}")
+        # AVX2 gemm contruct it_sse41_gemv_n_f32_kern in ONEDNN. Have to keep the source file.
+        if("${sse41_file}" MATCHES "(jit_sse41_gemv_n_f32_kern.cpp)$")
+            continue()
+        else()
+            list(REMOVE_ITEM SOURCES "${sse41_file}")
+        endif()
     endforeach()
 endif()
 

@@ -199,4 +199,6 @@
 #cmakedefine01 BUILD_GEMM_SSE41
 #cmakedefine01 BUILD_GEMM_AVX2
 #cmakedefine01 BUILD_GEMM_AVX512
+#cmakedefine01 REMOVE_SSE41_BUILD
+
 #endif

@@ -67,6 +67,7 @@ option(DNNL_BUILD_FOR_CI
     internal testing processes"
     OFF)
 option(DNNL_WERROR "treat warnings as errors" OFF)
+option(DNNL_REMOVE_SSE "remove SSE support" OFF)
 
 set(DNNL_TEST_SET "CI" CACHE STRING
     "specifies testing targets coverage. Supports SMOKE, CI, CI_NO_CORR,

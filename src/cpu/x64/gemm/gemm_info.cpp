@@ -578,7 +578,7 @@ void gemm_info_t<a_t, b_t, c_t>::jit_init(void) {
                             new jit_avx_f32_copy_bt_kern());
 #endif
                 } else if (mayiuse(sse41)) {
-#if __BUILD_GEMM_AVX2
+#if __BUILD_GEMM_SSE41
                     copy_a[no_trans][no_sum].reset(
                             new jit_sse41_f32_copy_an_kern());
                     copy_a[do_trans][no_sum].reset(
