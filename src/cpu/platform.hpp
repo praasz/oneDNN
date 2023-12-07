@@ -135,10 +135,10 @@
 #define __BUILD_AVX512 __BUILD_AMX || BUILD_AVX512
 #define __BUILD_AVX2 __BUILD_AVX512 || BUILD_AVX2
 
-#if REMOVE_SSE41_BUILD
-#define __BUILD_SSE41 0
-#else
+#if DNNL_BUILD_SSE
 #define __BUILD_SSE41 __BUILD_AVX2 || BUILD_SSE41
+#else
+#define __BUILD_SSE41 0
 #endif
 
 #else

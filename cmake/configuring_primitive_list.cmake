@@ -81,8 +81,10 @@ else()
 endif()
 message(STATUS "Enabled GeMM kernels ISA: ${ONEDNN_ENABLE_GEMM_KERNELS_ISA}")
 
-if (DNNL_REMOVE_SSE)
-    set(REMOVE_SSE41_BUILD TRUE)
+if (DNNL_BUILD_SSE)
+    set(DNNL_BUILD_SSE TRUE)
+else()
+    set(DNNL_BUILD_SSE FALSE)
 endif()
 
 # When certain primitives or primitive ISA are switched off, some functions may

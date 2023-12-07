@@ -142,7 +142,7 @@
 #define REG_REDUCTION_P(...) __VA_ARGS__
 #else
 #define REG_REDUCTION_P(...) \
-    {}
+    { nullptr }
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_REORDER
