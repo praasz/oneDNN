@@ -212,7 +212,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
         if (pd()->jbgp_.weights_decompression && pd()->jbgp_.wei_decomp_algo == weights_decomp_kind_t::prepack) {
             weights_decompression_compile_params_t jcp = {};
             jcp.oc_size = pd()->jbgp_.oc_block;
-            jcp.ic_internal_size = pd()->jbgp_.is_amx || utils::one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
+            jcp.ic_internal_size = pd()->jbgp_.wei_dt == data_type::bf16 ||
+                                   utils::one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
             jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
             jcp.broadcast_scales = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).dims_[0] == 1;
             jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);

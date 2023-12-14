@@ -311,7 +311,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     const size_t decomp_buf_per_thr = jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
                     auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr + wei_ic_stride * b * ic_blocks_per_batch;
 
-                    const int ic_internal_block = is_amx || one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
+                    const int ic_internal_block = pd()->jbgp_.wei_dt == data_type::bf16 ||
+                                                  one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
                     auto wei_zero_points_ptr = wei_zero_points + wei_zero_points_oc_stride * oc;
                     auto wei_scales_ptr = wei_scales + wei_scales_oc_stride * oc;
 
@@ -412,7 +413,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 const size_t decomp_buf_per_thr = jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
                 auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr;
 
-                const int ic_internal_block = is_amx || one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
+                const int ic_internal_block = pd()->jbgp_.wei_dt == data_type::bf16 ||
+                                              one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
                 auto wei_zero_points_ptr = wei_zero_points + wei_zero_points_oc_stride * oc;
                 auto wei_scales_ptr = wei_scales + wei_scales_oc_stride * oc;
 

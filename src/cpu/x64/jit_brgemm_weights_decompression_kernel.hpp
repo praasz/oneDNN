@@ -80,22 +80,16 @@ private:
     static constexpr int n_vregs = cpu_isa_traits<isa>::n_vregs;
 
     void generate() override;
-    void init_decomp_params(std::function<Vmm(int, int)> vmm_params, Xbyak::Reg64 reg_params, bool broadcast_values);
+    void init_decomp_params(std::function<Vmm(int)> vmm_params, Xbyak::Reg64 reg_params, bool broadcast_values);
+    void load_weights(Vmm vmm_load, const Xbyak::Address& addr, int ic);
+    void store_weights(const Xbyak::Address& addr, Vmm vmm_store);
 
-    Vmm vmm_scales(int ocb, int ic) {
-        assert(ocb < unroll_factor);
-        if (jcp_.decomp_buffer_dt == data_type::bf16)
-            return Vmm(unroll_factor + 2 * ic * unroll_factor + ocb);
-        else
-            return Vmm(unroll_factor + ocb);
+    Vmm vmm_scales(int ocb) {
+        return Vmm(unroll_factor + ocb);
     }
 
-    Vmm vmm_zero_points(int ocb, int ic) {
-        assert(ocb < unroll_factor);
-        if (jcp_.decomp_buffer_dt == data_type::bf16)
-            return Vmm(2 * unroll_factor + 2 * ic * unroll_factor + ocb);
-        else
-            return Vmm(2 * unroll_factor + ocb);
+    Vmm vmm_zero_points(int ocb) {
+        return Vmm(2 * unroll_factor + ocb);
     }
 
     Vmm vmm_weights(int ocb) {
@@ -110,6 +104,12 @@ private:
     Vmm vmm_tmp(int idx) {
         return Vmm(n_vregs - idx - 1);
     }
+
+    Vmm vmm_lookup() { return vmm_tmp(0); }
+    Vmm vmm_lookup_low() { return vmm_tmp(0); }
+    Vmm vmm_lookup_high() { return vmm_tmp(1); }
+    Vmm vmm_mask8() { return vmm_tmp(2); }
+    Vmm vmm_mask7() { return vmm_tmp(3); }
 
     Xbyak::Reg64 reg_weights = r8;
     Xbyak::Reg64 reg_decomp_buffer = r9;
