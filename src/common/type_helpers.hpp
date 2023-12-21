@@ -951,10 +951,12 @@ inline bool memory_desc_matches_tag(const memory_desc_t &md, format_tag_t tag,
 
     if (!same_blocks) return false;
 
+    if (strides == nullptr)
+        return array_cmp(blk.strides, blk_gold.strides, md.ndims);
+
     for (int d = 0; d < md.ndims; ++d) {
-        dim_t stride = strides == nullptr ? 0 : strides[d];
+        dim_t stride = strides[d];
         if (stride == -1) continue;
-        if (md.dims[d] == 1) continue; // stride of unit dim is meaningless
         if (stride == 0) stride = blk_gold.strides[d];
         if (blk.strides[d] != stride) return false;
     }
