@@ -211,9 +211,10 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
             VCHECK_CONV_UNIMPL(po.check_sum_consistency(dst_dt, is_int8, true),
                     VERBOSE_UNSUPPORTED_POSTOP);
         }
-    } else {
-        VCHECK_CONV_UNIMPL(false, VERBOSE_UNSUPPORTED_ATTR);
     }
+    // } else {
+    //     VCHECK_CONV_UNIMPL(false, VERBOSE_UNSUPPORTED_ATTR);
+    // }
 
     return status::success;
 }
