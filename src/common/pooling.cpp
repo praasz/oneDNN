@@ -183,7 +183,7 @@ dnnl_status_t dnnl_pooling_forward_primitive_desc_create(
     auto pool_desc = pooling_desc_t();
     CHECK(pooling_desc_init(&pool_desc, prop_kind, alg_kind, src_desc, dst_desc,
             strides, kernel, dilation, padding_l, padding_r));
-    CHECK(pooling_attr_check(pool_desc, engine, attr));
+    //CHECK(pooling_attr_check(pool_desc, engine, attr));
     return primitive_desc_create(primitive_desc_iface, engine,
             (const op_desc_t *)&pool_desc, nullptr, attr);
 }

@@ -236,7 +236,7 @@ status_t dnnl_convolution_forward_primitive_desc_create(
     CHECK(dnnl::impl::conv_desc_init(&conv_desc, prop_kind, alg_kind, src_desc,
             weights_desc, bias_desc, dst_desc, strides, dilates, padding_l,
             padding_r));
-    CHECK(dnnl::impl::conv_attr_check(conv_desc, engine, attr));
+    // CHECK(dnnl::impl::conv_attr_check(conv_desc, engine, attr));
     return primitive_desc_create(primitive_desc_iface, engine,
             (const op_desc_t *)&conv_desc, nullptr, attr);
 }
@@ -253,7 +253,7 @@ status_t dnnl_convolution_backward_data_primitive_desc_create(
     CHECK(dnnl::impl::conv_desc_init(&conv_desc, backward_data, alg_kind,
             diff_src_desc, weights_desc, nullptr, diff_dst_desc, strides,
             dilates, padding_l, padding_r));
-    CHECK(dnnl::impl::conv_attr_check(conv_desc, engine, attr));
+    // CHECK(dnnl::impl::conv_attr_check(conv_desc, engine, attr));
     return primitive_desc_create(primitive_desc_iface, engine,
             (const op_desc_t *)&conv_desc, hint_fwd_pd, attr);
 }

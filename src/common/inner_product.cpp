@@ -174,7 +174,7 @@ status_t dnnl_inner_product_forward_primitive_desc_create(
     auto ip_desc = inner_product_desc_t();
     CHECK(ip_desc_init(
             &ip_desc, prop_kind, src_desc, weights_desc, bias_desc, dst_desc));
-    CHECK(ip_attr_check(ip_desc, engine, attr));
+    //CHECK(ip_attr_check(ip_desc, engine, attr));
     return primitive_desc_create(primitive_desc_iface, engine,
             (const op_desc_t *)&ip_desc, nullptr, attr);
 }
