@@ -236,6 +236,18 @@ class LogParser:
                         res[arg] = convert_structure_to_ir_seq(zp_dict, zp_value_wo_arg)
                     return res
 
+                def convert_legacy_input_zero_points(value):
+                    res = {}
+                    zp_value = value.split("+")
+                    for zp in zp_value:
+                        arg = zp[: zp.find(":")]
+                        zp_value_wo_arg = zp[zp.find(":") + 1 :]
+                        zp_dict = {"mask": "0"}
+                        # print(arg)
+                        res[arg] = convert_structure_to_ir_seq(zp_dict, zp_value_wo_arg)
+                        # print(res)
+                    return res
+
                 def convert_scratchpad_mode(value):
                     return value
 
@@ -246,6 +258,8 @@ class LogParser:
                     "attr-post-ops": convert_post_ops,
                     "attr-scales": convert_scales,
                     "attr-zero-points": convert_zero_points,
+                    "attr-legacy-input-zero-points": convert_legacy_input_zero_points,
+                    "attr-legacy-output-comp": convert_legacy_input_zero_points,
                     "attr-scratchpad": convert_scratchpad_mode,
                     "attr-fpmath": convert_fpmath_mode,
                 }

@@ -50,13 +50,15 @@ void check_correctness(
     for_(const auto &i_alg : s.alg)
     for_(const auto &i_scales : s.scales)
     for_(const auto &i_zero_points : s.zero_points)
+    for_(const auto &i_legacy_zero_points : s.legacy_zero_points)
+    for_(const auto &i_legacy_output_comp : s.legacy_output_comp)
     for_(const auto &i_post_ops : s.post_ops)
     for_(const auto &i_scratchpad_mode : s.scratchpad_mode)
     for_(const auto &i_fpmath_mode : s.fpmath_mode)
     for_(const auto &i_ctx_init : s.ctx_init)
     for_(const auto &i_ctx_exe : s.ctx_exe)
     for (const auto &i_mb : s.mb) {
-        auto attr = settings_t::get_attr(i_scales, i_zero_points, i_post_ops,
+        auto attr = settings_t::get_attr(i_scales, i_zero_points, i_legacy_zero_points, i_legacy_output_comp, i_post_ops,
                 i_scratchpad_mode, i_fpmath_mode);
 
         auto i_dt = i_dt_;
@@ -125,6 +127,8 @@ int bench(int argc, char **argv) {
                 || parse_mb(s.mb, def.mb, argv[0])
                 || parse_attr_scales(s.scales, argv[0])
                 || parse_attr_zero_points(s.zero_points, argv[0])
+                || parse_attr_legacy_input_zero_points(s.legacy_zero_points, argv[0])
+                || parse_attr_legacy_output_comp(s.legacy_output_comp, argv[0])
                 || parse_attr_post_ops(s.post_ops, argv[0])
                 || parse_attr_scratchpad_mode(
                         s.scratchpad_mode, def.scratchpad_mode, argv[0])

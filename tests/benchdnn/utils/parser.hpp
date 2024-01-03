@@ -225,6 +225,12 @@ bool parse_attr_scales(std::vector<attr_t::arg_scales_t> &scales,
 bool parse_attr_zero_points(std::vector<attr_t::zero_points_t> &zp,
         const char *str, const std::string &option_name = "attr-zero-points");
 
+bool parse_attr_legacy_input_zero_points(std::vector<attr_t::legacy_zero_points_t> &zp,
+        const char *str, const std::string &option_name = "attr-legacy-input-zero-points");
+
+bool parse_attr_legacy_output_comp(std::vector<attr_t::legacy_output_comp_t> &output_comp,
+        const char *str, const std::string &option_name = "attr-legacy-output-comp");
+
 bool parse_attr_scratchpad_mode(
         std::vector<dnnl_scratchpad_mode_t> &scratchpad_mode,
         const std::vector<dnnl_scratchpad_mode_t> &def_scratchpad_mode,

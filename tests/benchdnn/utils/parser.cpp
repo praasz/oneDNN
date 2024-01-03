@@ -452,6 +452,28 @@ bool parse_attr_zero_points(std::vector<attr_t::zero_points_t> &zp,
     return parse_subattr(zp, str, option_name, help);
 }
 
+bool parse_attr_legacy_input_zero_points(std::vector<attr_t::legacy_zero_points_t> &zp,
+        const char *str,
+        const std::string &option_name /* = "attr-legacy-input-zero-points"*/) {
+    static const std::string help
+            = "ARG:POLICY:ZEROPOINT[*][+...]\n    Specifies zero-points "
+              "attribute.\n    More details at "
+              "https://github.com/oneapi-src/oneDNN/blob/master/tests/benchdnn/"
+              "doc/knobs_attr.md\n";
+    return parse_subattr(zp, str, option_name, help);
+}
+
+bool parse_attr_legacy_output_comp(std::vector<attr_t::legacy_output_comp_t> &output_comp,
+        const char *str,
+        const std::string &option_name /* = "attr-legacy-output-comp"*/) {
+    static const std::string help
+            = "ARG:POLICY:ZEROPOINT[*][+...]\n    Specifies zero-points "
+              "attribute.\n    More details at "
+              "https://github.com/oneapi-src/oneDNN/blob/master/tests/benchdnn/"
+              "doc/knobs_attr.md\n";
+    return parse_subattr(output_comp, str, option_name, help);
+}
+
 bool parse_attr_scratchpad_mode(
         std::vector<dnnl_scratchpad_mode_t> &scratchpad_mode,
         const std::vector<dnnl_scratchpad_mode_t> &def_scratchpad_mode,

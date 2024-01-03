@@ -801,6 +801,30 @@ void init_memory_args(dnn_mem_map_t &mem_map, const prb_t *prb,
             }
         }
     }
+
+    if (!prb->attr.legacy_zero_points.is_def()) {
+        const auto &legacy_zp = prb->attr.legacy_zero_points;
+
+        for (const auto &arg : legacy_zp.points) {
+            const auto arg_name = arg.first;
+            if (legacy_zp.is_def(arg_name)) continue;
+            int64_t ic = static_cast<int64_t>(arg_name);
+            auto zp_md = dnn_mem_t::init_md(1, &ic, dnnl_u8, tag::abx);
+            mem_map.emplace(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC, dnn_mem_t(zp_md, test_engine));
+        }
+    }
+    if (!prb->attr.legacy_output_comp.is_def()) {
+        const auto &legacy_comp = prb->attr.legacy_output_comp;
+
+        for (const auto &arg : legacy_comp.points) {
+            const auto arg_name = arg.first;
+            if (legacy_comp.is_def(arg_name)) continue;
+            int64_t oc = static_cast<int64_t>(arg_name);
+            auto comp_md = dnn_mem_t::init_md(1, &oc, dnnl_s32, tag::abx);
+            mem_map.emplace(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST, dnn_mem_t(comp_md, test_engine));
+        }
+    }
+
 }
 
 // Drop "destination" memory for in-place case. `args` will take care of setting

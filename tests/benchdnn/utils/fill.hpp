@@ -30,4 +30,6 @@ int fill_zero_points(
 
 int fill_random_real(dnn_mem_t &mem_dt);
 
+int fill_legacy_zp(const attr_t &attr, int arg, dnn_mem_t &mem_dt, dnn_mem_t &mem_fp);
+
 #endif

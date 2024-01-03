@@ -608,6 +608,15 @@ def convert_zp_policy(value):
     # this is a workaround for tensors with mask more than 4
     return "per_tensor"
 
+def convert_legacy_zp_policy(value):
+    # 4 is used by batched matmul
+    masks = {0: "common", 2: "per_dim_1"}
+    mask = masks.get(int(value))
+    if mask:
+        return mask
+    # this is a workaround for tensors with mask more than 4
+    return "per_tensor"
+
 
 def convert_post_ops(post_ops, prim_kind):
     def convert_binary_post_op(post_op):
@@ -700,6 +709,14 @@ def convert_zero_points(zero_points, prim_kind):
         res.append(benchdnn_zp)
     return "+".join(res)
 
+def convert_legacy_input_zero_points(zero_points, prim_kind):
+    res = []
+    for arg in zero_points.keys():
+        zp = zero_points[arg]
+        ##print(zp)
+        benchdnn_zp = arg + ":" + convert_legacy_zp_policy(zp["mask"]) + ":1*"
+        res.append(benchdnn_zp)
+    return "+".join(res)
 
 def convert_scratchpad_mode(scratchpad_mode, prim_kind):
     return scratchpad_mode
@@ -714,6 +731,8 @@ def convert_attrs(exts, prim_kind):
         "attr-post-ops": convert_post_ops,
         "attr-scales": convert_scales,
         "attr-zero-points": convert_zero_points,
+        "attr-legacy-input-zero-points": convert_legacy_input_zero_points,
+        "attr-legacy-output-comp": convert_legacy_input_zero_points,
         "attr-scratchpad": convert_scratchpad_mode,
         "attr-fpmath": convert_fpmath_mode,
     }

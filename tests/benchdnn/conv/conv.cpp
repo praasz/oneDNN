@@ -487,9 +487,16 @@ int init_ref_memory_args(dnn_mem_map_t &ref_mem_map, dnn_mem_map_t &mem_map,
                             WARN);
                 } else if (is_zero_point_arg) {
                     int local_exec_arg = exec_arg ^ DNNL_ARG_ATTR_ZERO_POINTS;
-                    SAFE(fill_zero_points(
-                                 prb->attr, local_exec_arg, mem, ref_mem),
-                            WARN);
+                    if(!prb->attr.zero_points.is_def(local_exec_arg))
+                        SAFE(fill_zero_points(
+                                    prb->attr, local_exec_arg, mem, ref_mem),
+                                WARN);
+                    //legacy zp and output compensation.
+                    else
+                        SAFE(fill_legacy_zp(
+                                    prb->attr, local_exec_arg, mem, ref_mem),
+                                WARN);
+
                 }
             } break;
         }

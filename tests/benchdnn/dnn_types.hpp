@@ -172,6 +172,112 @@ struct attr_t {
         std::unordered_map<int, entry_t> points;
     };
 
+    struct legacy_zero_points_t {
+        struct entry_t {
+            entry_t(policy_t apolicy = PER_DIM_1, int avalue = 0)
+                : policy(apolicy), value(avalue) {}
+
+            entry_t(const entry_t &other)
+                : policy(other.policy), value(other.value) {}
+
+            bool is_def() const { return policy == PER_DIM_1 && value == 0; }
+
+            policy_t policy = PER_DIM_1;
+            int value = 0;
+        };
+
+        int from_str(const std::string &s);
+
+        int operator[](int arg) const { return get(arg).value; }
+
+        bool is_def(int arg) const {
+            return points.empty() || get(arg).is_def();
+        }
+        bool is_def() const {
+            if (points.empty()) return true;
+
+            bool def = true;
+            for (const auto &e : points) {
+                def = def && is_def(e.first);
+            }
+            return def;
+        }
+
+        void set(int arg, policy_t policy, int value) {
+            set(arg, entry_t(policy, value));
+        }
+        void set(int arg, const entry_t &entry) {
+            if (!entry.is_def()) points[arg] = entry;
+        }
+        entry_t get(int arg) const {
+            const auto it = points.find(arg);
+            return it == points.end() ? entry_t() : it->second;
+        }
+
+        std::unordered_map<int, entry_t>::const_iterator begin() const {
+            return points.begin();
+        }
+        std::unordered_map<int, entry_t>::const_iterator end() const {
+            return points.end();
+        }
+
+        legacy_zero_points_t() : points() {} // needed for debug icc190 build;
+        std::unordered_map<int, entry_t> points;
+    };
+
+    struct legacy_output_comp_t {
+        struct entry_t {
+            entry_t(policy_t apolicy = PER_DIM_1, int avalue = 0)
+                : policy(apolicy), value(avalue) {}
+
+            entry_t(const entry_t &other)
+                : policy(other.policy), value(other.value) {}
+
+            bool is_def() const { return policy == PER_DIM_1 && value == 0; }
+
+            policy_t policy = PER_DIM_1;
+            int value = 0;
+        };
+
+        int from_str(const std::string &s);
+
+        int operator[](int arg) const { return get(arg).value; }
+
+        bool is_def(int arg) const {
+            return points.empty() || get(arg).is_def();
+        }
+        bool is_def() const {
+            if (points.empty()) return true;
+
+            bool def = true;
+            for (const auto &e : points) {
+                def = def && is_def(e.first);
+            }
+            return def;
+        }
+
+        void set(int arg, policy_t policy, int value) {
+            set(arg, entry_t(policy, value));
+        }
+        void set(int arg, const entry_t &entry) {
+            if (!entry.is_def()) points[arg] = entry;
+        }
+        entry_t get(int arg) const {
+            const auto it = points.find(arg);
+            return it == points.end() ? entry_t() : it->second;
+        }
+
+        std::unordered_map<int, entry_t>::const_iterator begin() const {
+            return points.begin();
+        }
+        std::unordered_map<int, entry_t>::const_iterator end() const {
+            return points.end();
+        }
+
+        legacy_output_comp_t() : points() {} // needed for debug icc190 build;
+        std::unordered_map<int, entry_t> points;
+    };
+
     struct arg_scales_t {
         struct entry_t {
             entry_t(policy_t apolicy = COMMON, float ascale = 1.f)
@@ -377,6 +483,8 @@ struct attr_t {
 
     void insert(const arg_scales_t &as) { this->scales = as; }
     void insert(const zero_points_t &zp) { this->zero_points = zp; }
+    void insert(const legacy_zero_points_t &zp) { this->legacy_zero_points = zp; }
+    void insert(const legacy_output_comp_t &comp) { this->legacy_output_comp = comp; }
     void insert(const post_ops_t &po) { this->post_ops = po; }
     void insert(dnnl_scratchpad_mode_t sm) { this->scratchpad_mode = sm; }
     void insert(dnnl_fpmath_mode_t fpm) { this->fpmath_mode = fpm; }
@@ -394,6 +502,8 @@ struct attr_t {
 
     arg_scales_t scales;
     zero_points_t zero_points;
+    legacy_zero_points_t legacy_zero_points;
+    legacy_output_comp_t legacy_output_comp;
     post_ops_t post_ops;
     dnnl_scratchpad_mode_t scratchpad_mode;
     dnnl_fpmath_mode_t fpmath_mode;
@@ -505,6 +615,10 @@ std::ostream &operator<<(
 std::ostream &operator<<(std::ostream &s, const policy_t &policy);
 std::ostream &operator<<(
         std::ostream &s, const attr_t::zero_points_t &zero_points);
+std::ostream &operator<<(
+        std::ostream &s, const attr_t::legacy_zero_points_t &legacy_zero_points);
+std::ostream &operator<<(
+        std::ostream &s, const attr_t::legacy_output_comp_t &legacy_zero_points);
 std::ostream &operator<<(std::ostream &s, const attr_t::arg_scales_t &scales);
 std::ostream &operator<<(std::ostream &s, const attr_t::post_ops_t::kind_t &k);
 std::ostream &operator<<(std::ostream &s, const attr_t::post_ops_t &post_ops);

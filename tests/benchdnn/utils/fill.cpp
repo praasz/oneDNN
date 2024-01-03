@@ -107,6 +107,40 @@ int fill_zero_points(
     return OK;
 }
 
+int fill_legacy_zp(
+        const attr_t &attr, int arg, dnn_mem_t &mem_dt, dnn_mem_t &mem_fp) {
+    const auto nelems = mem_fp.nelems();
+    if (nelems == 0) return OK;
+    assert(mem_dt.nelems() == mem_fp.nelems());
+
+    /* Do fixed partitioning to have same filling for any number of threads */
+    const int64_t n_chunks = 16;
+    const int64_t chunk_size = div_up(nelems, n_chunks);
+    benchdnn_parallel_nd(n_chunks, [&](int64_t idx_chunk) {
+        int64_t idx_start = idx_chunk * chunk_size;
+        int64_t idx_end = MIN2(idx_start + chunk_size, nelems);
+        // Note: we use a different seed for each chunk to avoid
+        // repeating patterns. We could use discard(idx_start) too but
+        // it has a complexity in O(idx_start). We also add 1 to avoid
+        // seeding with 0.
+        std::minstd_rand int_seed(idx_start + 1);
+        int_seed.discard(1);
+
+        std::uniform_int_distribution<> gen(-2, 2);
+
+        for (int64_t idx = idx_start; idx < idx_end; ++idx) {
+            const float zp_val = gen(int_seed);
+            // printf(".");
+            mem_fp.set_elem(idx, zp_val);
+            if (mem_dt) mem_dt.set_elem(idx, zp_val);
+        }
+    });
+    // printf("\n");
+
+    return OK;
+}
+
+
 int fill_random_real(dnn_mem_t &mem_dt) {
     const auto nelems = mem_dt.nelems();
     if (nelems == 0) return OK;

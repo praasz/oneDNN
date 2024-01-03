@@ -26,6 +26,8 @@ struct base_settings_t {
     std::vector<bool> inplace {false};
     std::vector<attr_t::arg_scales_t> scales {attr_t::arg_scales_t()};
     std::vector<attr_t::zero_points_t> zero_points {attr_t::zero_points_t()};
+    std::vector<attr_t::legacy_zero_points_t> legacy_zero_points {attr_t::legacy_zero_points_t()};
+    std::vector<attr_t::legacy_output_comp_t> legacy_output_comp {attr_t::legacy_output_comp_t()};
     std::vector<attr_t::post_ops_t> post_ops {attr_t::post_ops_t()};
     std::vector<dnnl_scratchpad_mode_t> scratchpad_mode {
             attr_t::get_default_scratchpad_mode()};
@@ -61,7 +63,8 @@ struct base_settings_t {
         return mb.size() == 1 && inplace.size() == 1 && scales.size() == 1
                 && zero_points.size() == 1 && post_ops.size() == 1
                 && scratchpad_mode.size() == 1 && fpmath_mode.size() == 1
-                && ctx_init.size() == 1 && ctx_exe.size() == 1;
+                && ctx_init.size() == 1 && ctx_exe.size() == 1 &&
+                legacy_zero_points.size() == 1;
     }
 };
 

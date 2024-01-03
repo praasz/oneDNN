@@ -331,6 +331,72 @@ int attr_t::zero_points_t::from_str(const std::string &s) {
     return OK;
 }
 
+int attr_t::legacy_zero_points_t::from_str(const std::string &s) {
+    *this = legacy_zero_points_t();
+    if (s.empty()) return OK;
+
+    size_t start_pos = 0;
+    while (start_pos != std::string::npos) {
+        auto subs = parser::get_substr(s, start_pos, '+');
+        size_t subs_pos = 0;
+        auto sub = parser::get_substr(subs, subs_pos, ':');
+        auto arg = stoi(sub);
+
+        if (arg == BENCHDNN_DNNL_ARG_UNDEF || subs_pos == std::string::npos
+                || subs_pos >= subs.size()) {
+            BENCHDNN_PRINT(0,
+                    "Error: argument name \'%s\' was not recognized.\n",
+                    subs.c_str());
+            return FAIL;
+        }
+
+        auto policy = str2policy(parser::get_substr(subs, subs_pos, ':'));
+        if (policy == POLICY_TOTAL || subs_pos == std::string::npos
+                || subs_pos >= subs.size())
+            return FAIL;
+
+        float zp = 0;
+        SAFE(parse_value_and_runtime(
+                     zp, parser::get_substr(subs, subs_pos, '\0')),
+                WARN);
+        set(arg, policy, static_cast<int>(zp));
+    }
+    return OK;
+}
+
+int attr_t::legacy_output_comp_t::from_str(const std::string &s) {
+    *this = legacy_output_comp_t();
+    if (s.empty()) return OK;
+
+    size_t start_pos = 0;
+    while (start_pos != std::string::npos) {
+        auto subs = parser::get_substr(s, start_pos, '+');
+        size_t subs_pos = 0;
+        auto sub = parser::get_substr(subs, subs_pos, ':');
+        auto arg = stoi(sub);
+        if (arg == BENCHDNN_DNNL_ARG_UNDEF || subs_pos == std::string::npos
+                || subs_pos >= subs.size()) {
+            BENCHDNN_PRINT(0,
+                    "Error: argument name \'%s\' was not recognized.\n",
+                    subs.c_str());
+            return FAIL;
+        }
+
+        auto policy = str2policy(parser::get_substr(subs, subs_pos, ':'));
+        if (policy == POLICY_TOTAL || subs_pos == std::string::npos
+                || subs_pos >= subs.size())
+            return FAIL;
+
+        float zp = 0;
+        SAFE(parse_value_and_runtime(
+                     zp, parser::get_substr(subs, subs_pos, '\0')),
+                WARN);
+        set(arg, policy, static_cast<int>(zp));
+    }
+    return OK;
+}
+
+
 int attr_t::arg_scales_t::from_str(const std::string &s) {
     *this = arg_scales_t();
     if (s.empty()) return OK;
@@ -586,6 +652,35 @@ std::ostream &operator<<(
 
     return s;
 }
+
+std::ostream &operator<<(
+        std::ostream &s, const attr_t::legacy_zero_points_t &legacy_zero_points) {
+    const char *delim = "";
+    // TODO: remove '*'
+    for (const auto &point : legacy_zero_points.points) {
+        s << delim;
+        s << arg2str(point.first) << ":" << point.second.policy << ":"
+          << point.second.value << '*';
+        delim = "+";
+    }
+
+    return s;
+}
+
+std::ostream &operator<<(
+        std::ostream &s, const attr_t::legacy_output_comp_t &output_comp) {
+    const char *delim = "";
+    // TODO: remove '*'
+    for (const auto &point : output_comp.points) {
+        s << delim;
+        s << arg2str(point.first) << ":" << point.second.policy << ":"
+          << point.second.value << '*';
+        delim = "+";
+    }
+
+    return s;
+}
+
 
 std::ostream &operator<<(std::ostream &s, const attr_t::arg_scales_t &scales) {
     const char *delim = "";
@@ -938,6 +1033,34 @@ dnnl_primitive_attr_t create_dnnl_attr(
             int mask = attr_t::get_default_mask(e.policy);
 
             DNN_SAFE_V(dnnl_primitive_attr_set_zero_points_mask(
+                    dnnl_attr, arg_name, mask));
+        }
+    }
+
+    if (!attr.legacy_zero_points.is_def()) {
+        const auto &zp = attr.legacy_zero_points;
+        for (const auto &arg : zp.points) {
+            const auto arg_name = arg.first;
+            if (zp.is_def(arg_name)) continue;
+
+            const auto &e = arg.second;
+            int mask = attr_t::get_default_mask(e.policy);
+
+            DNN_SAFE_V(dnnl_primitive_attr_set_input_zero_points(
+                    dnnl_attr, arg_name, mask));
+        }
+    }
+
+    if (!attr.legacy_output_comp.is_def()) {
+        const auto &output_comp = attr.legacy_output_comp;
+        for (const auto &arg : output_comp.points) {
+            const auto arg_name = arg.first;
+            if (output_comp.is_def(arg_name)) continue;
+
+            const auto &e = arg.second;
+            int mask = attr_t::get_default_mask(e.policy);
+
+            DNN_SAFE_V(dnnl_primitive_attr_set_output_compensations(
                     dnnl_attr, arg_name, mask));
         }
     }
