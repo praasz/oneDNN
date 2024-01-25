@@ -406,6 +406,8 @@ static inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
 //         case isa_undef: return true;
 //         case isa_all: return false;
 //     }
+    if (cpu_isa == sse41)
+        return true;
     return false;
 }
 
