@@ -329,7 +329,7 @@ struct cpu_isa_traits<avx512_vpopcnt> {
 };
 
 inline const Xbyak::util::Cpu &cpu() {
-    const static Xbyak::util::Cpu cpu_;
+    const static thread_local Xbyak::util::Cpu cpu_;
     return cpu_;
 }
 

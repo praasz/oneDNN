@@ -57,6 +57,8 @@ struct key_t {
     int impl_nthr_;
     std::vector<memory_desc_t> hint_mds_;
     engine_id_t engine_id_;
+    unsigned int l1_cache_sz;
+    unsigned int l2_cache_sz;
 
 private:
     template <typename desc_t>
@@ -153,6 +155,8 @@ struct hash<dnnl::impl::primitive_hashing::key_t> {
 #undef CASE
         seed = get_array_hash(
                 seed, key.hint_mds_.data(), (int)key.hint_mds_.size());
+        seed = hash_combine(seed, static_cast<size_t>(key.l1_cache_sz));
+        seed = hash_combine(seed, static_cast<size_t>(key.l2_cache_sz));
 
         return seed;
     }

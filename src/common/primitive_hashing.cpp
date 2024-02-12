@@ -21,6 +21,7 @@
 #include "dnnl_thread.hpp"
 #include "engine.hpp"
 #include "primitive_hashing.hpp"
+#include "cpu/platform.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -36,6 +37,8 @@ key_t::key_t(const engine_t *engine, const op_desc_t *op_desc,
     , impl_nthr_(dnnl_get_max_threads())
     , hint_mds_(hint_mds)
     , engine_id_(engine->engine_id())
+    , l1_cache_sz(dnnl::impl::cpu::platform::get_per_core_cache_size(1))
+    , l2_cache_sz(dnnl::impl::cpu::platform::get_per_core_cache_size(2))
     , thread_id_(std::this_thread::get_id()) {}
 
 key_t::key_t(const primitive_desc_t *pd, const engine_t *engine)
@@ -52,7 +55,9 @@ bool key_t::operator==(const key_t &rhs) const {
         && hint_mds_.size() == rhs.hint_mds_.size()
         && pd_iterator_offset_ == rhs.pd_iterator_offset_
         && impl_nthr_ == rhs.impl_nthr_
-        && (*attr_) == (*rhs.attr_);
+        && (*attr_) == (*rhs.attr_)
+        && l1_cache_sz == rhs.l1_cache_sz
+        && l2_cache_sz == rhs.l2_cache_sz;
 
     if (!ret) return false;
 
